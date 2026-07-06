@@ -312,10 +312,15 @@ ax time now --tz America/New_York`}</pre>
             Output is capped by default (never silently). Errors are one structured line with a
             hint.
             <code> --help</code> costs a few dozen tokens, and <code>ax agent-context</code> prints
-            everything an agent needs to know — offline. Install the skill to make your agent reach
-            for ax on its own.
+            everything an agent needs to know — offline. Paste the prompt to teach your agent for
+            the current session, or install the skill to make it stick.
           </p>
           <div class='steps'>
+            <div class='step'>
+              <span class='what'>teach agent</span>
+              <code>{AGENT_PROMPT}</code>
+              <button data-copy={AGENT_PROMPT}>copy</button>
+            </div>
             <div class='step'>
               <span class='what'>add skill</span>
               <code>npx skills add yusukebe/ax</code>
