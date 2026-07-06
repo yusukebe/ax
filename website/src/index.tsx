@@ -29,9 +29,11 @@ code,pre{font-family:var(--mono)}
 margin:0 auto;padding:24px 36px}
 .logo{font-size:20px;font-weight:800;display:flex;align-items:center;gap:8px}
 .logo b{color:var(--acc)}
-.top nav{display:flex;gap:10px;font-size:13.5px}
-.top nav a{padding:7px 14px;border-radius:999px;background:var(--card);border:2px solid var(--line);transition:.15s}
-.top nav a:hover{border-color:var(--acc);color:var(--acc);transform:translateY(-2px)}
+.top .star{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:999px;
+background:var(--acc);color:#fff;font-size:14px;font-weight:800;border:none;
+box-shadow:0 4px 0 #d94a10;transition:.15s}
+.top .star:hover{transform:translateY(2px);box-shadow:0 1px 0 #d94a10}
+.top .star svg{width:16px;height:16px;fill:#ffd9a8}
 .intro{max-width:1080px;margin:0 auto;padding:70px 36px 60px;display:grid;
 grid-template-columns:minmax(0,1fr) 340px;gap:48px;align-items:center}
 .hero-art{display:flex;flex-direction:column;align-items:center;gap:28px}
@@ -173,11 +175,12 @@ const Page = () => (
         <div class='logo'>
           🪓 <b>ax</b>
         </div>
-        <nav>
-          <a href='https://github.com/yusukebe/ax'>GitHub</a>
-          <a href='/llms.txt'>llms.txt</a>
-          <a href='/skill.md'>skill</a>
-        </nav>
+        <a class='star' href='https://github.com/yusukebe/ax'>
+          <svg viewBox='0 0 16 16' aria-hidden='true'>
+            <path d='M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z' />
+          </svg>
+          Star on GitHub
+        </a>
       </header>
 
       <div class='intro'>
