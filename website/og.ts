@@ -6,7 +6,6 @@ const svg = `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http:/
   <rect width="1200" height="630" fill="#fff7ec"/>
   <!-- soft card behind the wordmark -->
   <rect x="60" y="76" width="220" height="164" rx="28" fill="#fffdf9" stroke="#f3e2cd" stroke-width="4"/>
-  <rect x="60" y="236" width="220" height="10" rx="5" fill="#ffdcc0"/>
   <text x="170" y="200" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="120" font-weight="800" letter-spacing="-6" fill="#46372d">a<tspan fill="#ff5c1a">x</tspan></text>
   <!-- headline -->
   <text x="80" y="360" font-family="Helvetica, Arial, sans-serif" font-size="66" font-weight="800" letter-spacing="-2" fill="#46372d">One binary. No more</text>
