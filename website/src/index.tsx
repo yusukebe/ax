@@ -96,8 +96,9 @@ border:2px solid var(--line);border-radius:16px}
 letter-spacing:.08em;text-transform:uppercase}
 .install code{font-size:13.5px;overflow-x:auto;white-space:nowrap}
 .install code::before{content:'$ ';color:var(--acc);font-weight:700}
-.agents p{max-width:640px;font-size:15px;color:#6b5a4c;margin-bottom:24px}
-.agents .steps{max-width:520px}
+.agents .cols{display:grid;grid-template-columns:minmax(0,1fr) 500px;gap:56px;align-items:center}
+.agents p{font-size:15px;color:#6b5a4c;margin:0}
+.agents .steps{max-width:none}
 .bottom{max-width:1080px;margin:0 auto;padding:10px 36px 56px;display:flex;align-items:center;
 justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--soft)}
 .bottom a{text-decoration:underline;text-underline-offset:3px}
@@ -107,6 +108,7 @@ justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(-
 .hero-art{flex-direction:row;justify-content:center}
 .mascot{font-size:80px}
 .term{max-width:420px}
+.agents .cols{grid-template-columns:1fr;gap:24px}
 }
 @media(max-width:760px){
 .duel{grid-template-columns:1fr}
@@ -305,28 +307,27 @@ ax time now --tz America/New_York`}</pre>
 
       <section class='agents'>
         <h2>Built for agents, not just humans.</h2>
-        <p>
-          Output is capped by default (never silently). Errors are one structured line with a hint.
-          <code> --help</code> costs a few dozen tokens, and <code>ax agent-context</code> prints
-          everything an agent needs to know — offline. Install the skill to make your agent reach
-          for ax on its own — works with Claude Code, Cursor, Codex, and 20+ agents via{' '}
-          <a href='https://www.skills.sh/' style='text-decoration:underline'>
-            skills.sh
-          </a>
-          :
-        </p>
-        <div class='steps'>
-          <div class='step'>
-            <span class='n'>$</span>
-            <span class='what'>learn</span>
-            <code>ax agent-context</code>
-            <button data-copy='ax agent-context'>copy</button>
-          </div>
-          <div class='step'>
-            <span class='n'>+</span>
-            <span class='what'>add skill</span>
-            <code>npx skills add yusukebe/ax</code>
-            <button data-copy='npx skills add yusukebe/ax'>copy</button>
+        <div class='cols'>
+          <p>
+            Output is capped by default (never silently). Errors are one structured line with a
+            hint.
+            <code> --help</code> costs a few dozen tokens, and <code>ax agent-context</code> prints
+            everything an agent needs to know — offline. Install the skill to make your agent reach
+            for ax on its own.
+          </p>
+          <div class='steps'>
+            <div class='step'>
+              <span class='n'>$</span>
+              <span class='what'>learn</span>
+              <code>ax agent-context</code>
+              <button data-copy='ax agent-context'>copy</button>
+            </div>
+            <div class='step'>
+              <span class='n'>+</span>
+              <span class='what'>add skill</span>
+              <code>npx skills add yusukebe/ax</code>
+              <button data-copy='npx skills add yusukebe/ax'>copy</button>
+            </div>
           </div>
         </div>
       </section>
