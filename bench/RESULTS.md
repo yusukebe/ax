@@ -78,6 +78,7 @@ A wins. Kept for honesty.
 | agent model | A: baseline       | B: with ax           | ax effect                |
 | ----------- | ----------------- | -------------------- | ------------------------ |
 | Fable 5     | $0.62 / 5 turns   | $0.57 / 4 turns      | −8%                      |
+| Opus 4.8    | $0.309 / 5 turns  | **$0.224 / 3 turns** | **−28% cost, −18% time** |
 | Sonnet 5    | $0.238 / 7 turns  | **$0.204 / 5 turns** | **−14% cost, −31% time** |
 | Haiku 4.5   | $0.178 / 14 turns | **$0.070 / 3 turns** | **−61% cost**            |
 
