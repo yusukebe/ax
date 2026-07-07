@@ -381,7 +381,7 @@ ax url '.review' --like 'battery complaints'`}</pre>
             </span>
           </div>
           <div class='brow'>
-            <span class='desc'>Same task, meeting ax for the very first time</span>
+            <span class='desc'>Same task, the agent's first-ever use of ax — cost of reading the docs included</span>
             <span class='delta'>−58% cost</span>
             <span class='nums'>
               without ax <b>$0.664</b> → with ax <b>$0.282</b>
