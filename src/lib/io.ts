@@ -19,6 +19,8 @@ export async function readSource(src: string | undefined): Promise<string> {
       (await cached.exists()) &&
       Date.now() - cached.lastModified < FETCH_TTL_MS
     ) {
+      const age = Math.round((Date.now() - cached.lastModified) / 1000)
+      process.stderr.write(`ax: note: using ${age}s-old cached fetch (--fresh to refetch)\n`)
       return await cached.text()
     }
     const res = await fetch(src)
