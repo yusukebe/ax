@@ -34,7 +34,7 @@ beforeAll(() => {
 afterAll(() => server.stop())
 
 test('http: JSON body is parsed and pipeable', async () => {
-  const r = await ax(['http', `http://localhost:${server.port}/json`])
+  const r = await ax([`http://localhost:${server.port}/json`])
   const rep = JSON.parse(r.out)
   expect(rep.status).toBe(200)
   expect(rep.ok).toBe(true)
@@ -44,34 +44,30 @@ test('http: JSON body is parsed and pipeable', async () => {
 
 // The whole point: an empty body still yields a full report (curl -s shows nothing).
 test('http: empty body is never silent', async () => {
-  const rep = JSON.parse((await ax(['http', `http://localhost:${server.port}/empty`])).out)
+  const rep = JSON.parse((await ax([`http://localhost:${server.port}/empty`])).out)
   expect(rep.status).toBe(200)
   expect(rep.body).toBe('')
 })
 
 test('http: non-2xx is a report, not a crash', async () => {
-  const r = await ax(['http', `http://localhost:${server.port}/nope`])
+  const r = await ax([`http://localhost:${server.port}/nope`])
   expect(r.code).toBe(0)
   expect(JSON.parse(r.out).status).toBe(404)
 })
 
 test('http: --budget truncates with an explicit note', async () => {
-  const rep = JSON.parse(
-    (await ax(['http', `http://localhost:${server.port}/big`, '--budget', '10'])).out
-  )
+  const rep = JSON.parse((await ax([`http://localhost:${server.port}/big`, '--budget', '10'])).out)
   expect(rep.body.length).toBe(40)
   expect(rep.body_truncated).toContain('hidden')
 })
 
 test('http: -d implies POST and sends the body', async () => {
-  const rep = JSON.parse(
-    (await ax(['http', `http://localhost:${server.port}/echo`, '-d', 'hi'])).out
-  )
+  const rep = JSON.parse((await ax([`http://localhost:${server.port}/echo`, '-d', 'hi'])).out)
   expect(rep.body).toBe('POST:hi')
 })
 
 test('http: connection refused is a structured error with a hint', async () => {
-  const r = await ax(['http', 'http://localhost:1/nope'])
+  const r = await ax(['http://localhost:1/nope'])
   expect(r.code).toBe(1)
   expect(r.err).toContain('is the server running')
 })

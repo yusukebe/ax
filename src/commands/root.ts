@@ -5,42 +5,43 @@ import { emitLines, emitJson } from '../lib/emit'
 import { compileWhere } from '../lib/expr'
 import { toTsv } from '../lib/query'
 
-export const htmlHelp = `ax html — extract from HTML with CSS selectors (no regex, no broken markup)
+export const rootHelp = `ax — the AI-era curl: fetch, discover, extract. One command.
 
 usage:
-  ax html <file|url|-> <selector> [options]
+  ax <url|file|-> [selector] [options]
 
-options:
-  --text            emit each match's text content (default)
-  --attr <name>     emit an attribute value (e.g. --attr href)
-  --html            emit each match's inner HTML
-  --json            emit a JSON array of {text, html, attrs}
-  --row <spec>      extract structured rows: 'name=sel, name2=sel@attr, ...'
-                    sel is relative to each match; @attr reads an attribute;
-                    an empty sel (e.g. id=@data-id) targets the match itself
-  --table           parse <table> into rows keyed by headers
-                    (selector optional; defaults to every table on the page)
-  --where <expr>    filter --row/--table rows: level ~ /^A/ && title != ''
-  --limit <n>       cap results (default 50)
-  --all             no cap
+fetch (no selector — curl parity, but never silent):
+  ax https://api.example.com/users        {status, ok, ms, headers, body}
+  -X, --method <m>   -H, --header <k: v>   -d, --data <body>
+  JSON bodies are parsed; repeat fetches of one URL are cached ~2min (--fresh)
 
-discovery (explore an unknown page without dumping raw HTML):
-  --outline         list repeating tag.class signatures with counts
-  --count           print how many elements the selector matches
-  --locate <text>   find which selector(s) contain a piece of text
+discover (unknown page? never dump raw HTML):
+  --outline          repeating tag.class signatures with counts
+  --locate <text>    which selector holds this text (matches attributes too)
+  --count            how many elements match <selector>
+
+extract (selector — CSS, structured, drift-proof):
+  --row 'title=a, href=a@href, level=.cefr'   structured rows (@attr reads
+                                              attributes; empty sel = the match)
+  --table            <table> → rows keyed by headers
+  --text | --attr <name> | --html             simpler per-match output
+  --md               readable page content as markdown (for reading docs)
+  --where <expr>     filter rows: price > 100 && name ~ /^foo/i  (no eval)
+  --like <query>     rank matches by MEANING (local model, offline)  [--min s]
+
+output shape (token-cheap by design):
+  --tsv              header-once rows    --limit <n> (default 50)  --all
+  --budget <t>       cap output at ~t tokens; truncation is never silent
 
 examples:
-  ax html page.html '.lesson a' --attr href
-  ax html https://example.com 'h2' --text
-  ax html page.html '.lesson' --row 'title=a, href=a@href, level=.cefr'
-  ax html https://site.com/ --outline
-  ax html https://site.com/ --locate 'BurgerBarn'
-  ax html page.html '.card' --count`
+  ax https://news.ycombinator.com '.titleline > a' --row 'title=, href=@href'
+  ax https://site.com --outline
+  ax https://docs.site.com/guide --md --budget 800
+  ax page.html 'table.stats' --table --where 'Stars >= 30000'
+  ax https://api.site.com/things -H 'authorization: Bearer x'`
 
 type Field = { name: string; sel: string; attr: string | null }
 
-// Parse a --row spec like "title=a, href=a@href, id=@data-id" into fields.
-// Each entry is name=selector, where selector may end with @attribute.
 function parseRowSpec(spec: string): Field[] {
   return spec
     .split(',')
@@ -64,14 +65,11 @@ function parseRowSpec(spec: string): Field[] {
 
 const collapse = (s: string) => s.trim().replace(/\s+/g, ' ')
 
-// One compact signature for an element: tag + classes (e.g. div.card.wide).
 function signature(el: Element): string {
   const classes = [...el.classList]
   return el.localName + (classes.length ? '.' + classes.join('.') : '')
 }
 
-// Build a compact CSS-ish path from <body> down to an element, so --locate
-// can answer "where does this text live?" with a selector, not raw bytes.
 function selectorPath(el: Element): string {
   const parts: string[] = []
   let node: Element | null = el
@@ -82,37 +80,152 @@ function selectorPath(el: Element): string {
   return parts.join(' > ')
 }
 
-export async function html(argv: string[]) {
+// --md: readable main content as markdown — the docs-reading path.
+function toMarkdown(root: Element): string {
+  const out: string[] = []
+  const walk = (el: Element, depth: number) => {
+    for (const child of el.children) {
+      const tag = child.localName
+      if (
+        ['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript', 'svg', 'form'].includes(
+          tag
+        )
+      )
+        continue
+      const text = collapse(child.textContent ?? '')
+      if (/^h[1-6]$/.test(tag) && text) {
+        out.push(`${'#'.repeat(Number(tag[1]))} ${text}`)
+      } else if (tag === 'p' && text) {
+        out.push(text)
+      } else if (tag === 'pre') {
+        out.push('```\n' + (child.textContent ?? '').trim() + '\n```')
+      } else if (tag === 'li' && text) {
+        out.push(`- ${text}`)
+      } else if (tag === 'table') {
+        const rows = [...child.querySelectorAll('tr')].map((tr) =>
+          [...tr.querySelectorAll('th, td')].map((c) => collapse(c.textContent ?? '')).join(' | ')
+        )
+        out.push(rows.join('\n'))
+      } else if (tag === 'blockquote' && text) {
+        out.push(`> ${text}`)
+      } else {
+        walk(child, depth + 1)
+      }
+    }
+  }
+  const main =
+    root.querySelector('article') ??
+    root.querySelector('main') ??
+    root.querySelector('body') ??
+    root
+  walk(main as Element, 0)
+  return out.join('\n\n')
+}
+
+export async function root(argv: string[]) {
   const { _, flags } = parseArgs(argv, {
+    help: { type: 'boolean' },
+    fresh: { type: 'boolean' },
+    all: { type: 'boolean' },
     text: { type: 'boolean' },
     html: { type: 'boolean' },
     json: { type: 'boolean' },
-    all: { type: 'boolean' },
-    help: { type: 'boolean' },
-    fresh: { type: 'boolean' },
     outline: { type: 'boolean' },
     count: { type: 'boolean' },
+    table: { type: 'boolean' },
+    tsv: { type: 'boolean' },
+    md: { type: 'boolean' },
     attr: { type: 'string' },
     row: { type: 'string' },
     locate: { type: 'string' },
-    limit: { type: 'string' },
-    table: { type: 'boolean' },
     where: { type: 'string' },
-    tsv: { type: 'boolean' },
-    budget: { type: 'string' },
     like: { type: 'string' },
     min: { type: 'string' },
+    limit: { type: 'string' },
+    budget: { type: 'string' },
+    method: { type: 'string', short: 'X' },
+    header: { type: 'string', short: 'H', multiple: true },
+    data: { type: 'string', short: 'd' },
   })
-  if (flags.help) return console.log(htmlHelp)
-  const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
+  if (flags.help || _.length === 0) return console.log(rootHelp)
 
   const [src, selector] = _
-  const { document } = parseHTML(await readSource(src))
   const opts = {
     limit: num(flags.limit, 50),
     all: flags.all === true,
     budget: num(flags.budget, 0),
   }
+  const isUrl = /^https?:\/\//.test(src!)
+  const parseFlags =
+    selector !== undefined ||
+    flags.outline === true ||
+    flags.md === true ||
+    typeof flags.locate === 'string' ||
+    flags.table === true
+
+  // --- fetch mode: curl parity, structured, never silent ---
+  if (isUrl && !parseFlags) {
+    const headers: Record<string, string> = {}
+    for (const h of (flags.header ?? []) as string[]) {
+      const idx = h.indexOf(':')
+      if (idx === -1) fail(`bad header (expected 'Name: value'): ${h}`)
+      headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim()
+    }
+    const method =
+      typeof flags.method === 'string'
+        ? flags.method.toUpperCase()
+        : flags.data !== undefined
+          ? 'POST'
+          : 'GET'
+    const started = performance.now()
+    let res: Response
+    try {
+      res = await fetch(src!, {
+        method,
+        headers,
+        body: typeof flags.data === 'string' ? flags.data : undefined,
+      })
+    } catch (e) {
+      return fail(`request failed: ${(e as Error).message}`, `is the server running at ${src}?`)
+    }
+    const ms = Math.round(performance.now() - started)
+    const raw = await res.text()
+    const budgetTokens = flags.all === true ? Infinity : opts.budget > 0 ? opts.budget : 500
+    const maxChars = budgetTokens * 4
+    const truncated = raw.length > maxChars
+    const bodyText = truncated ? raw.slice(0, maxChars) : raw
+    let body: unknown = bodyText
+    if ((res.headers.get('content-type') ?? '').includes('json') && !truncated) {
+      try {
+        body = JSON.parse(bodyText)
+      } catch {
+        /* keep text */
+      }
+    }
+    process.stdout.write(
+      JSON.stringify(
+        {
+          status: res.status,
+          ok: res.ok,
+          ms,
+          headers: Object.fromEntries(res.headers.entries()),
+          body,
+          ...(truncated
+            ? {
+                body_truncated: `${raw.length - maxChars} of ${raw.length} chars hidden (--all or --budget T)`,
+              }
+            : {}),
+        },
+        null,
+        2
+      ) + '\n'
+    )
+    process.exit(0)
+  }
+
+  // --- parse mode ---
+  const { document } = parseHTML(await readSource(src))
+  const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
   const scope = (): ParentNode => {
     if (!selector) return document.querySelector('body') ?? document
     const el = document.querySelector(selector)
@@ -120,8 +233,11 @@ export async function html(argv: string[]) {
     return el
   }
 
-  // --outline: discover the repeating structure (tag.class signatures + counts).
-  // Selector is optional and scopes the scan.
+  if (flags.md) {
+    const md = toMarkdown((document.querySelector('html') ?? document) as unknown as Element)
+    return emitLines(md.split('\n'), { ...opts, budget: opts.budget || 2000 })
+  }
+
   if (flags.outline) {
     const counts = new Map<string, number>()
     for (const el of scope().querySelectorAll('*')) {
@@ -135,18 +251,14 @@ export async function html(argv: string[]) {
     return emitLines(lines, opts)
   }
 
-  // --locate <text>: find where a string lives (own text or attribute value),
-  // and report a selector path + a short snippet (agent-native peek).
   if (typeof flags.locate === 'string') {
     const needle = flags.locate.toLowerCase()
     const hits: { selector: string; match: string }[] = []
     for (const el of scope().querySelectorAll('*')) {
-      // Match on an attribute value (like the agent grepping raw HTML)...
       const attrHit = el
         .getAttributeNames()
         .map((n) => [n, el.getAttribute(n) ?? ''] as const)
         .find(([, v]) => v.toLowerCase().includes(needle))
-      // ...or on this element's own text, keeping only the innermost text match.
       const childHit = [...el.children].some((c) =>
         (c.textContent ?? '').toLowerCase().includes(needle)
       )
@@ -162,9 +274,6 @@ export async function html(argv: string[]) {
     return emitJson(hits, opts)
   }
 
-  // --table: turn <table> elements into structured rows. Headers come from
-  // thead th (or the first row); each body row becomes {header: cell}.
-  // rowspan/colspan are not expanded.
   if (flags.table) {
     const tables = [...document.querySelectorAll(selector ?? 'table')].filter(
       (el) => el.localName === 'table' || (el.querySelector('table') && el.localName !== 'table')
@@ -173,41 +282,36 @@ export async function html(argv: string[]) {
       el.localName === 'table' ? [el] : [...el.querySelectorAll('table')]
     )
     if (targets.length === 0) fail(`no <table> found${selector ? ` under: ${selector}` : ''}`)
-
     const parse = (table: Element) => {
       const allRows = [...table.querySelectorAll('tr')]
-      if (allRows.length === 0) return { headers: [], rows: [] }
+      if (allRows.length === 0) return { headers: [], rows: [] as Record<string, string | null>[] }
       const headerCells = [...(allRows[0]?.querySelectorAll('th') ?? [])]
       const hasHeader = headerCells.length > 0
       const headers = hasHeader
         ? headerCells.map((c, i) => collapse(c.textContent ?? '') || `col${i}`)
-        : [...(allRows[0]?.querySelectorAll('td') ?? [])].map((_, i) => `col${i}`)
+        : [...(allRows[0]?.querySelectorAll('td') ?? [])].map((_c, i) => `col${i}`)
       const dataRows = hasHeader ? allRows.slice(1) : allRows
       const rows = dataRows
         .map((tr) => {
           const cells = [...tr.querySelectorAll('th, td')].map((c) => collapse(c.textContent ?? ''))
           return Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? null]))
         })
-        // Drop all-empty rows (e.g. secondary header rows, spacer rows).
         .filter((r) => Object.values(r).some((v) => v))
       return { headers, rows }
     }
-
     const parsed = targets.map(parse)
     if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
-    // One table → just its rows; several → keep them separate.
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
+    if (typeof flags.like === 'string')
+      return rankAndEmit(flags.like, tableResult as unknown[], flags, opts)
     if (flags.tsv) return emitLines(toTsv(tableResult), opts)
     return emitJson(tableResult, opts)
   }
 
-  // Everything below needs a selector.
-  if (!selector) fail('missing selector', 'ax html <file|url|-> <selector>')
-
+  if (!selector) fail('missing selector', 'ax <url|file|-> <selector>  (or --outline / --md)')
   const els = [...document.querySelectorAll(selector)]
   if (els.length === 0) fail(`selector matched nothing: ${selector}`)
 
-  // --count: just how many elements match (probe a hypothesis cheaply).
   if (flags.count) return void process.stdout.write(els.length + '\n')
 
   if (typeof flags.row === 'string') {
@@ -216,13 +320,9 @@ export async function html(argv: string[]) {
       const obj: Record<string, string | null> = {}
       for (const f of fields) {
         const target = f.sel === '' ? el : el.querySelector(f.sel)
-        if (!target) {
-          obj[f.name] = null
-        } else if (f.attr) {
-          obj[f.name] = target.getAttribute(f.attr)
-        } else {
-          obj[f.name] = collapse(target.textContent ?? '')
-        }
+        if (!target) obj[f.name] = null
+        else if (f.attr) obj[f.name] = target.getAttribute(f.attr)
+        else obj[f.name] = collapse(target.textContent ?? '')
       }
       return obj
     })
@@ -255,13 +355,11 @@ export async function html(argv: string[]) {
     )
   }
 
-  // default: text
   const texts = els.map((el) => collapse(el.textContent ?? ''))
   if (typeof flags.like === 'string') return rankAndEmit(flags.like, texts, flags, opts)
   return emitLines(texts, opts)
 }
 
-// Rank items by semantic similarity and emit "score  item" lines.
 async function rankAndEmit(
   query: string,
   items: unknown[],

@@ -1,79 +1,42 @@
-# ax — a scriptless multitool for AI agents
+# ax — the AI-era curl: fetch, discover, extract. One command.
 
-Use ax instead of writing a throwaway python/regex script for HTML, JSON,
-YAML, text, encodings, and timestamps. Source is a file, URL, or `-` (stdin).
+Use ax instead of curl + throwaway parsing scripts. Source is a URL, a file,
+or `-` (stdin). Output is structured and token-capped by design.
 
 Install: curl -fsSL https://ax.yusuke.run/install | sh
 Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
 
-## The pattern: one question → one call
+## Fetch (no selector — curl parity, never silent)
 
-Filter + project + aggregate in a single command; don't build pipelines:
+    ax https://api.site.com/users [-X POST] [-H 'k: v'] [-d body]
+    → {status, ok, ms, headers, body}. Empty bodies and error statuses still
+      produce a full report. JSON bodies are parsed. Repeat fetches of a URL
+      are cached ~2min (--fresh to bypass; cache hits are announced).
 
-    ax json users.json '.users[]' --where 'active == true && age > 40' --pick country --freq
+## Discover (unknown page? never dump raw HTML into context)
 
-## Discover before you extract (never cat a big file)
+    ax https://site.com --outline          repeating tag.class + counts
+    ax https://site.com --locate 'text'    which selector holds this text
+    ax https://site.com '.card' --count    test a selector hypothesis
 
-    ax json api.json --shape              # structure of any JSON in one line
-    ax html page.html --outline           # repeating tag.class + counts
-    ax html page.html --locate 'text'     # which selector holds this text
-    ax html page.html '.card' --count     # test a selector hypothesis
+## Extract (CSS selectors — structured, drift-proof, no regex)
 
-## Commands
-
-ax html <src> <selector>
-    --row 'title=a, href=a@href, level=.cefr'   structured rows (@attr reads attrs;
-                                                 empty sel = the match itself)
-    --table                                      <table> → rows keyed by headers
-    --text | --attr <name> | --html | --json     simpler per-match output
-    --where <expr>  --tsv                        filter rows; TSV output
-
-ax json <src> [path] / ax yaml <src> [path]
-    path: .  .key  .a.b.c  .["k"]  .items[]  .items[0]
-    --shape  --where <expr>  --pick a,b  --freq  --tsv  --keys  --len  --raw
-
-ax text <src>
-    --grep <re> [-i] [--invert]   --extract <re> [--freq]   grep -o + uniq -c
-    --like <query> [--min 0.3]    semantic grep: ranks lines by MEANING, for
-                                  queries a regex cannot express (local model,
-                                  offline, deterministic). Composes with --grep.
-        ax text tickets.txt --like 'shipping complaints' --limit 10
-        --like is a high-recall funnel, not an oracle: for exhaustive tasks,
-        cast several differently-worded nets and union the results, then
-        read the candidates and judge them yourself:
-        for q in 'lost package' 'arrived damaged' 'late delivery'; do
-          ax text big.txt --like "$q" --limit 60; done | sort -u
-    --count  --head n  --tail n
-
-ax http <url> [-X POST] [-H 'k: v'] [-d body]          curl for agents
-    Always returns {status, ok, ms, headers, body} — an empty body or error
-    status is still a full report. JSON bodies are parsed (pipe into ax json).
-    Body capped at ~500 tokens (--budget T / --all).
-
-ax stats <src|->                                       count/mean/min/max/p50/p90/p95/p99
-    ax text app.log --grep INFO --extract '\d+(?=ms)' --all | ax stats
-ax enc <base64|url|hex|jwt|sha256|sha1|md5> [input]   (-d to decode; jwt shows
-    header+payload with exp/iat as ISO)
-ax time [now|epoch|ISO] [--tz Zone]                    epoch/ISO/local/relative
-ax agent-context                                       print this document
-
-ax json also reads NDJSON / concatenated JSON (parsed as an array).
-
-## --where expressions (no eval)
-
-    price > 100 && stock != 0        name ~ /^Lesson/i || level == "A1"
-    ops: == != > >= < <= ~ !~ && || ! ()   values: numbers 'strings' /re/ true false null
-    dot.paths and .length work; numeric strings compare numerically
+    ax URL '.item' --row 'title=a, href=a@href, level=.cefr'
+      @attr reads attributes; empty sel (id=@data-id) = the match itself
+    ax URL 'table' --table                 <table> → rows keyed by headers
+    ax URL '.item a' --attr href | --text | --html
+    ax URL --md                            readable page as markdown (docs!)
+    --where 'price > 100 && name ~ /^foo/i'    filter rows (safe expr, no eval)
+    --like 'battery complaints' [--min 0.3]    rank matches by MEANING
+      (local model, offline, deterministic — a funnel, not an oracle: for
+       exhaustive tasks cast several differently-worded --like nets and union)
 
 ## Output rules
 
-- Results are capped at 50 (never silently — stderr notes what was hidden).
-  `--limit n` / `--all` / `--budget <tokens>` control it.
-- When piping ax into ax, add `--all` (or a budget) to the upstream call.
-- Errors are one line on stderr with a hint; fix the flag, don't rewrite the approach.
-- For a multi-part question, plan every probe up front and run them ALL in one
-  batched shell line; answer on the next turn. Turns cost more than commands.
-- ax is deterministic: don't re-verify consistent results. One cross-check max,
-  and only when numbers disagree.
-- For a trivial single grep or line count, plain grep is fine too — reach for
-  ax when structure, filtering, or aggregation is involved.
+- Results cap at 50 (--limit n / --all / --budget <tokens>); truncation is
+  always announced on stderr, never silent.
+- --tsv emits uniform rows as header-once TSV (≈1/3 the tokens of JSON).
+- Errors are one stderr line with a hint; fix the flag, don't change approach.
+- Batch related probes in one shell line; answer in as few turns as possible.
+- The workflow: fetch/--outline once → --locate/--count to confirm → one
+  --row/--table call. The URL cache makes repeated probes free.

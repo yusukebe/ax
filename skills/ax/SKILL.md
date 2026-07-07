@@ -1,90 +1,44 @@
 ---
 name: ax
-description: Use the ax CLI instead of writing throwaway python/regex scripts when extracting data from HTML, querying JSON/YAML, processing text, decoding base64/JWT, or converting timestamps. Trigger whenever you are about to write an inline script (python3 heredoc, node -e, complex sed/awk) for one-off data extraction, scraping, or exploration of an unknown page.
+description: Use the ax CLI instead of curl + throwaway parsing scripts whenever you fetch a URL, explore an unknown web page, or extract structured data from HTML. Trigger whenever you are about to write an inline script (python3 heredoc, node -e, regex over HTML) or a bare curl for one-off web fetching, scraping, or page exploration.
 ---
 
-# ax — a scriptless multitool for AI agents
+# ax — the AI-era curl: fetch, discover, extract
 
-`ax` replaces the throwaway script you were about to write. It reads from a
-file, a URL, or `-` (stdin), and speaks JSON.
+One command: `ax <url|file|-> [selector] [flags]`. Never write regex over
+HTML, and never use bare curl (it returns nothing on empty bodies).
 
-## When to reach for ax
-
-- You want data out of HTML (a page, a fragment, a saved file) → `ax html`
-- You want to query or reshape JSON → `ax json`
-- You want to read YAML (CI configs, compose, k8s) → `ax yaml`
-- You want grep/head/tail/count/extract over text → `ax text`
-- You want base64/url/hex/JWT decode or a hash → `ax enc`
-- You want epoch ⇔ ISO ⇔ timezone conversion → `ax time`
-- You do NOT know the page structure yet → `ax html --outline / --locate`
-
-Do not write a python heredoc or `node -e` script for these. One `ax` line is
-cheaper to write, cheaper to read back, and does not break on markup shifts.
-
-## Workflow: discover, then extract
-
-1. `ax html <url> --outline` — see the repeating tag.class signatures
-2. `ax html <url> --locate 'known text'` — learn which selector holds a landmark
-3. `ax html <url> '<row-selector>' --count` — confirm your hypothesis
-4. `ax html <url> '<row-selector>' --row 'name=sel, href=a@href, ...'` — extract
-   structured rows in one shot
-
-## Command cheatsheet
+## Cheatsheet
 
 ```sh
-ax json api.json --shape                         # structure in one line — never cat a big file
-ax json api.json '.users[]' --where 'active == true && age > 40' --pick country --freq
-ax json data.json '.items[]' --pick name,price --tsv   # token-cheap rows
-ax html page.html '.item' --row 'title=a, href=a@href, id=@data-id'
-ax html page.html 'table.stats' --table          # <table> → rows JSON
-ax html page.html --outline                      # repeating structures
-ax html page.html --locate 'some text'           # where does this live?
-ax yaml compose.yml '.services[].image' --raw    # same paths for YAML
-ax text app.log --grep 'ERROR|WARN' --count
-ax text tickets.txt --like 'shipping complaints' --limit 10   # semantic grep — meaning, not regex
-ax text style.css --extract '#[0-9a-fA-F]{6}' --freq   # grep -o + uniq -c
-ax enc jwt "$TOKEN"                              # peek header/payload
-ax time 1783332078                               # epoch → ISO/local/relative
+ax https://api.site.com/users                    # {status, ok, ms, headers, body} — never silent
+ax https://api.site.com/users -H 'authorization: Bearer x' -X POST -d '{"a":1}'
+ax https://site.com --outline                    # discover: repeating structures
+ax https://site.com --locate 'some text'         # discover: which selector holds this
+ax https://site.com '.card' --count              # confirm a hypothesis
+ax https://site.com '.card' --row 'title=a, href=a@href, id=@data-id'
+ax https://site.com 'table' --table --where 'Stars >= 30000'
+ax https://docs.site.com/guide --md --budget 800 # read docs as markdown
+ax page.html '.review' --like 'battery complaints' --limit 10   # semantic rank
 ```
 
-One question → one call: prefer `--where/--pick/--freq` in a single command over
-building shell pipelines. When you do pipe ax into ax, add `--all` upstream.
+The workflow: fetch/--outline once → --locate/--count to confirm → ONE
+--row/--table call. Repeat fetches of the same URL are cached ~2min, so
+probing is free (--fresh to bypass).
 
 ## Speed discipline
 
-Aim for ≤3 tool calls TOTAL, no matter how many files or sub-questions: one
-batched look, one batched query line, then answer. Turns cost far more than
-commands — semicolons are free, so two files means the same line twice.
-When the question already names the files and fields, merge the look into the
-query call (put --shape/--outline first on the same line) and answer on turn 2.
-Verification probes (--count, --len, a cross-check) belong ON the same batched
-line as the queries — never as follow-up turns.
-Answer with the numbers, concisely — no methodology narration.
+Aim for ≤3 tool calls: one batched look (`ax URL --outline; ax URL '.guess' --count`),
+one extraction call, then answer. Turns cost more than commands — semicolons
+are free. ax is deterministic: don't re-verify consistent results.
+Answer with the data, concisely — no methodology narration.
 
-```sh
-# call 1 — look at everything at once:
-ax text app.log --head 5; ax json users.json --shape
-# call 2 — every answer in one line (note the quoting: "field == 'string'"):
-ax text app.log --grep ' INFO ' --extract '(\d+)ms' --all | ax stats; \
-ax text app.log --grep ' ERROR ' --extract 'E\d+' --freq; \
-ax json users.json '.users[]' --where "active == true && plan == 'pro'" --pick age --raw --all | ax stats
-# call 3 — answer. Done.
-```
+## Output rules
 
-ax is deterministic: do not re-verify results that came back consistent.
-One cross-check max, and only when numbers disagree. `ax stats` for
-percentiles/means, `--freq` for top-N: never hand-compute.
-
-Full reference: `ax --help`, `ax <command> --help`, or fetch
-https://ax.yusuke.run/llms.txt
-
-## Etiquette (matters for token efficiency)
-
-- **One probe per shell call.** Don't batch probes with `echo "==="` banners —
-  the tool call itself labels the output.
-- **Respect the default cap.** Output is capped at 50 items; a stderr note
-  tells you what was hidden. Only add `--all` when you truly need everything.
-- **Read stderr.** Errors are one structured line (`ax: error: ...`) with a
-  hint — don't retry blind.
-- **Pipe, don't script.** `ax html ... --text --all | ax text - --grep ...`
-  composes; an inline script does not.
+- Default cap 50 results; stderr announces anything hidden. `--limit`,
+  `--all`, `--budget <tokens>` control it. `--tsv` for token-cheap rows.
+- Errors are one stderr line with a hint — fix the flag, not the approach.
+- --like is a high-recall funnel, not an oracle: for exhaustive tasks cast
+  several differently-worded nets and union the results, then judge yourself.
+- For plain text files and non-web work, use your usual tools — ax is for
+  the web.
