@@ -30,7 +30,8 @@ extract (selector — CSS, structured, drift-proof):
   --like <query>     rank matches by MEANING (local model, offline)  [--min s]
 
 output shape (token-cheap by design):
-  --tsv              header-once rows    --limit <n> (default 50)  --all
+  rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
+  --limit <n> (default 50)   --all
   --budget <t>       cap output at ~t tokens; truncation is never silent
 
 examples:
@@ -305,8 +306,8 @@ export async function root(argv: string[]) {
     if (parsed.length === 1) rowStats(parsed[0]!.rows)
     if (typeof flags.like === 'string')
       return rankAndEmit(flags.like, tableResult as unknown[], flags, opts)
-    if (flags.tsv) return emitLines(toTsv(tableResult), opts)
-    return emitJson(tableResult, opts)
+    if (flags.json || parsed.length > 1) return emitJson(tableResult, opts)
+    return emitLines(toTsv(tableResult), opts)
   }
 
   if (!selector) fail('missing selector', 'ax <url|file|-> <selector>  (or --outline / --md)')
@@ -330,8 +331,8 @@ export async function root(argv: string[]) {
     const rowResult = wherePred ? rows.filter(wherePred) : rows
     rowStats(rowResult)
     if (typeof flags.like === 'string') return rankAndEmit(flags.like, rowResult, flags, opts)
-    if (flags.tsv) return emitLines(toTsv(rowResult), opts)
-    return emitJson(rowResult, opts)
+    if (flags.json) return emitJson(rowResult, opts)
+    return emitLines(toTsv(rowResult), opts)
   }
 
   if (flags.json) {

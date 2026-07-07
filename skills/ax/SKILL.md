@@ -36,7 +36,7 @@ Answer with the data, concisely — no methodology narration.
 ## Output rules
 
 - Default cap 50 results; stderr announces anything hidden. `--limit`,
-  `--all`, `--budget <tokens>` control it. `--tsv` for token-cheap rows.
+  `--all`, `--budget <tokens>` control it. Rows default to token-cheap TSV; add `--json` if you need JSON.
 - Errors are one stderr line with a hint — fix the flag, not the approach.
 - --like is a high-recall funnel, not an oracle: for exhaustive tasks cast
   several differently-worded nets and union the results, then judge yourself.

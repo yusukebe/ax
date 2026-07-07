@@ -114,7 +114,7 @@ export function toTsv(result: unknown): string[] {
       ? ''
       : typeOf(v) === 'object' || Array.isArray(v)
         ? JSON.stringify(v)
-        : String(v)
+        : String(v).replace(/[\t\n]/g, ' ')
   if (typeOf(arr[0]) !== 'object') return arr.map(cell)
   const headers = Object.keys(arr[0] as object)
   return [

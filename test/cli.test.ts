@@ -40,18 +40,24 @@ beforeAll(() => {
   )
 })
 
-test('extract: --row with @attr and nested tags', () => {
-  const rows = JSON.parse(ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv']).out)
+test('extract: --row defaults to TSV, --json for JSON rows', () => {
+  const tsv = ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv']).out
+  expect(tsv.split('\n')[0]).toBe('title\thref\tlv')
+  expect(tsv.split('\n')[1]).toBe('One bold\t/1.htm\tA1')
+  const rows = JSON.parse(
+    ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv', '--json']).out
+  )
   expect(rows[0]).toEqual({ title: 'One bold', href: '/1.htm', lv: 'A1' })
 })
 
 test('extract: --row --where filters rows', () => {
-  const r = ax(['page.html', '.card', '--row', 'lv=.lv', '--where', 'lv == "B2"'])
+  const r = ax(['page.html', '.card', '--row', 'lv=.lv', '--where', 'lv == "B2"', '--json'])
   expect(JSON.parse(r.out)).toHaveLength(1)
 })
 
-test('extract: --table keys rows by headers', () => {
-  expect(JSON.parse(ax(['page.html', '--table']).out)).toEqual([{ K: 'x', V: '1' }])
+test('extract: --table defaults to TSV', () => {
+  expect(ax(['page.html', '--table']).out).toBe('K\tV\nx\t1')
+  expect(JSON.parse(ax(['page.html', '--table', '--json']).out)).toEqual([{ K: 'x', V: '1' }])
 })
 
 test('discover: --outline and --locate', () => {
@@ -74,12 +80,6 @@ test('extract: --count and --attr', () => {
     '/1.htm',
     '/2.htm',
   ])
-})
-
-test('extract: --tsv emits header once', () => {
-  const r = ax(['page.html', '.card', '--row', 'lv=.lv', '--tsv'])
-  expect(r.out.split('\n')[0]).toBe('lv')
-  expect(r.out.split('\n')).toHaveLength(3)
 })
 
 test('errors: missing selector hint, exit 1 on no match', () => {
