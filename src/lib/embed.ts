@@ -13,6 +13,8 @@ const ORT_VERSION = '1.27.0'
 const MODEL = process.env.AX_EMBED_MODEL ?? 'Xenova/all-MiniLM-L6-v2'
 const SLUG = MODEL.replace('/', '--')
 const HF = `https://huggingface.co/${MODEL}/resolve/main`
+// bge-family models use CLS pooling and a query instruction prefix.
+const IS_BGE = MODEL.includes('bge')
 const ASSETS = [
   { file: `${SLUG}-q8.onnx`, url: `${HF}/onnx/model_quantized.onnx`, note: 'model' },
   { file: `${SLUG}-tokenizer.json`, url: `${HF}/tokenizer.json`, note: 'tokenizer' },
@@ -132,16 +134,17 @@ export function getEmbedder(): Promise<Embedder> {
       const data = hidden!.data as Float32Array
       const dim = (hidden!.dims[2] as number) ?? 384
 
-      // Mean-pool over real tokens, then L2-normalize.
+      // Pool (CLS for bge, mean otherwise), then L2-normalize.
       return encoded.map((e, i) => {
         const vec = new Array(dim).fill(0)
-        for (let j = 0; j < e.length; j++) {
+        const span = IS_BGE ? 1 : e.length
+        for (let j = 0; j < span; j++) {
           const off = (i * maxLen + j) * dim
           for (let d = 0; d < dim; d++) vec[d] += data[off + d]!
         }
         let norm = 0
         for (let d = 0; d < dim; d++) {
-          vec[d] /= e.length
+          vec[d] /= span
           norm += vec[d] * vec[d]
         }
         norm = Math.sqrt(norm) || 1
@@ -165,7 +168,10 @@ export async function rankBySimilarity(
   batchSize = 64
 ): Promise<{ score: number; line: string }[]> {
   const embed = await getEmbedder()
-  const [queryVec] = await embed([query])
+  const q = MODEL.includes('bge')
+    ? `Represent this sentence for searching relevant passages: ${query}`
+    : query
+  const [queryVec] = await embed([q])
   const scored: { score: number; line: string }[] = []
   for (let i = 0; i < lines.length; i += batchSize) {
     const batch = lines.slice(i, i + batchSize)

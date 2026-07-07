@@ -38,6 +38,11 @@ ax text <src>
                                   queries a regex cannot express (local model,
                                   offline, deterministic). Composes with --grep.
         ax text tickets.txt --like 'shipping complaints' --limit 10
+        --like is a high-recall funnel, not an oracle: for exhaustive tasks,
+        cast several differently-worded nets and union the results, then
+        read the candidates and judge them yourself:
+        for q in 'lost package' 'arrived damaged' 'late delivery'; do
+          ax text big.txt --like "$q" --limit 60; done | sort -u
     --count  --head n  --tail n
 
 ax http <url> [-X POST] [-H 'k: v'] [-d body]          curl for agents

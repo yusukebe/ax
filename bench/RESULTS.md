@@ -90,6 +90,23 @@ it followed the skill's 3-call pattern.
 as Fable 5 alone ($0.62) — **9× cheaper** — and beat Sonnet alone ($0.24) by
 3.4×. ax lets you hand frontier-model work to a budget model.
 
+### Semantic search (--like) — measured honestly, not benched as a win
+
+On a 5,000-line haystack of textually-unique support messages (combinatorial +
+LLM-generated fillers, no statistical shortcuts), finding 40 deliberately
+keyword-free shipping complaints:
+
+- single query: recall 29/40 @top-100 (MiniLM), 34/40 @top-300
+- realistic multi-net technique (5–8 differently-worded queries, unioned):
+  **37/40 in a 252-line candidate set** — a 20× read reduction at 92.5% recall
+- the last 3 complaints ("the van drove off while i was waving") are only
+  findable by reading everything — that is judgment, i.e. agent work
+- bge-small-en-v1.5 (CLS pooling + query prefix) did not beat MiniLM here
+
+Conclusion baked into the skill: --like is a high-recall funnel for
+find-some/browse tasks, not an oracle for exhaustive counts. We did not run
+an A/B where the ax side would report a wrong exact count.
+
 ## Correctness
 
 Both conditions answered every question correctly in every round (15+ runs).
