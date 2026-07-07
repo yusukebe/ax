@@ -1,0 +1,1 @@
+Quick check on sample.html in the current directory: how many li.lesson items does it contain, and what is the title of the first one? Keep it brief.

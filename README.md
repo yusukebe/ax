@@ -40,12 +40,12 @@ Teach your agent: `npx skills add yusukebe/ax` — or have it run `ax agent-cont
 
 |                                                | throwaway python | curl + htmlq | ax  |
 | ---------------------------------------------- | :--------------: | :----------: | :-: |
-| fetch with a full report (status/headers/ms)   |        △ *write it* |      ✗       |  ✓  |
+| fetch with a full report (status/headers/ms)   |   △ _write it_   |      ✗       |  ✓  |
 | structure discovery (`--outline` / `--locate`) |        ✗         |      ✗       |  ✓  |
-| CSS-selector extraction                        |   △ *needs bs4*  |      ✓       |  ✓  |
-| multi-field rows in one call (`--row`)         |   △ *write it*   |      ✗       |  ✓  |
-| `<table>` → keyed rows                         |   △ *write it*   |      ✗       |  ✓  |
-| survives markup drift                          |   ✗ *(regex)*    |      ✓       |  ✓  |
+| CSS-selector extraction                        |  △ _needs bs4_   |      ✓       |  ✓  |
+| multi-field rows in one call (`--row`)         |   △ _write it_   |      ✗       |  ✓  |
+| `<table>` → keyed rows                         |   △ _write it_   |      ✗       |  ✓  |
+| survives markup drift                          |   ✗ _(regex)_    |      ✓       |  ✓  |
 | semantic ranking (`--like`), offline           |        ✗         |      ✗       |  ✓  |
 | page → readable markdown (`--md`)              |        ✗         |      ✗       |  ✓  |
 | token-shaped output (caps, `--budget`, notes)  |        ✗         |      ✗       |  ✓  |

@@ -175,3 +175,17 @@ the three web-arena benches re-run cold on Opus (baselines unchanged):
 
 All correct. The focused surface + fetch cache + tighter skill closed the
 live-web gap that the toolkit era never won.
+
+### Warm web-arena runs (both sides warmed on a related page)
+
+| phase 2      | A warm       | B warm           |
+| ------------ | ------------ | ---------------- |
+| live website | $0.277 / 55s | **$0.267 / 49s** |
+| markup drift | $0.303 / 70s | **$0.285 / 66s** |
+
+Warmth helps _both_ sides: A's drift cost fell $0.664 → $0.303 because the
+warmup taught it the page structure (our warmup page shares the fixture's
+markup — a deliberate but structure-leaking design). Verdict: ax wins every
+web bench cold and warm; warm margins are slim because experience is the
+great equalizer on single-structure tasks. The big warm win (−43%) lives on
+multi-step investigations.
