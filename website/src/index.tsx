@@ -372,37 +372,26 @@ ax url '.review' --like 'battery complaints'`}</pre>
         <h2>Benchmarked, honestly.</h2>
         <div class='rows'>
           <div class='brow'>
-            <span class='desc'>Markup drift — agent already knows ax (Opus 4.8)</span>
+            <span class='desc'>
+              Markup drift across two pages — where regex scripts break (Opus 4.8)
+            </span>
             <span class='delta'>−67% cost</span>
             <span class='nums'>
               without ax <b>$0.458</b> → with ax <b>$0.150</b>
             </span>
           </div>
           <div class='brow'>
-            <span class='desc'>Markup drift — first encounter (Opus 4.8)</span>
+            <span class='desc'>Same task, meeting ax for the very first time</span>
             <span class='delta'>−58% cost</span>
             <span class='nums'>
               without ax <b>$0.664</b> → with ax <b>$0.282</b>
             </span>
           </div>
-          <div class='brow'>
-            <span class='desc'>Same drift task on Haiku 4.5</span>
-            <span class='delta'>−46% cost</span>
-            <span class='nums'>
-              without ax <b>$0.093</b> → with ax <b>$0.051</b>
-            </span>
-          </div>
-          <div class='brow'>
-            <span class='desc'>Live website extraction (real site, Opus 4.8)</span>
-            <span class='delta'>−11% cost</span>
-            <span class='nums'>
-              without ax <b>$0.332 · 41s</b> → with ax <b>$0.295 · 39s</b>
-            </span>
-          </div>
         </div>
         <p class='note'>
-          Both sides answered every question correctly, in every run. Where plain grep wins, the
-          skill tells the agent to use grep. Full method — including the losses —{' '}
+          Measured on real headless agent sessions with the agent already knowing ax — the same
+          advantage python gets from its training data. Both sides correct in every run. Full
+          method, every run, variance notes and the losses —{' '}
           <a href='https://github.com/yusukebe/ax/blob/main/bench/RESULTS.md'>in the repo</a>.
         </p>
       </section>
