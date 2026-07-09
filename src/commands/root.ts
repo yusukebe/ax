@@ -27,7 +27,6 @@ extract (selector — CSS, structured, drift-proof):
   --text | --attr <name> | --html             simpler per-match output
   --md               readable page content as markdown (for reading docs)
   --where <expr>     filter rows: price > 100 && name ~ /^foo/i  (no eval)
-  --like <query>     rank matches by MEANING (local model, offline)  [--min s]
 
 output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
@@ -140,8 +139,6 @@ export async function root(argv: string[]) {
     row: { type: 'string' },
     locate: { type: 'string' },
     where: { type: 'string' },
-    like: { type: 'string' },
-    min: { type: 'string' },
     limit: { type: 'string' },
     budget: { type: 'string' },
     method: { type: 'string', short: 'X' },
@@ -304,8 +301,6 @@ export async function root(argv: string[]) {
     if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
     if (parsed.length === 1) rowStats(parsed[0]!.rows)
-    if (typeof flags.like === 'string')
-      return rankAndEmit(flags.like, tableResult as unknown[], flags, opts)
     if (flags.json || parsed.length > 1) return emitJson(tableResult, opts)
     return emitLines(toTsv(tableResult), opts)
   }
@@ -330,7 +325,6 @@ export async function root(argv: string[]) {
     })
     const rowResult = wherePred ? rows.filter(wherePred) : rows
     rowStats(rowResult)
-    if (typeof flags.like === 'string') return rankAndEmit(flags.like, rowResult, flags, opts)
     if (flags.json) return emitJson(rowResult, opts)
     return emitLines(toTsv(rowResult), opts)
   }
@@ -359,7 +353,6 @@ export async function root(argv: string[]) {
   }
 
   const texts = els.map((el) => collapse(el.textContent ?? ''))
-  if (typeof flags.like === 'string') return rankAndEmit(flags.like, texts, flags, opts)
   return emitLines(texts, opts)
 }
 
@@ -377,19 +370,3 @@ function rowStats(rows: Record<string, string | null>[]) {
   )
 }
 
-async function rankAndEmit(
-  query: string,
-  items: unknown[],
-  flags: Record<string, string | boolean | undefined>,
-  opts: { limit: number; all: boolean; budget: number }
-) {
-  const { rankBySimilarity } = await import('../lib/embed')
-  const strings = items.map((v) => (typeof v === 'string' ? v : JSON.stringify(v)))
-  const ranked = await rankBySimilarity(query, strings)
-  const minScore = typeof flags.min === 'string' ? Number(flags.min) : -Infinity
-  emitLines(
-    ranked.filter((r) => r.score >= minScore).map((r) => `${r.score.toFixed(3)}  ${r.line}`),
-    opts
-  )
-  process.exit(0)
-}

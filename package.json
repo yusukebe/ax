@@ -27,7 +27,6 @@
   },
   "dependencies": {
     "js-yaml": "^5.2.1",
-    "linkedom": "^0.18.12",
-    "onnxruntime-web": "^1.27.0"
+    "linkedom": "^0.18.12"
   }
 }

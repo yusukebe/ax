@@ -19,7 +19,6 @@ ax https://site.com '.card' --count              # confirm a hypothesis
 ax https://site.com '.card' --row 'title=a, href=a@href, id=@data-id'
 ax https://site.com 'table' --table --where 'Stars >= 30000'
 ax https://docs.site.com/guide --md --budget 800 # read docs as markdown
-ax page.html '.review' --like 'battery complaints' --limit 10   # semantic rank
 ```
 
 The workflow: fetch/--outline once → --locate/--count to confirm → ONE
@@ -38,7 +37,5 @@ Answer with the data, concisely — no methodology narration.
 - Default cap 50 results; stderr announces anything hidden. `--limit`,
   `--all`, `--budget <tokens>` control it. Rows default to token-cheap TSV; add `--json` if you need JSON.
 - Errors are one stderr line with a hint — fix the flag, not the approach.
-- --like is a high-recall funnel, not an oracle: for exhaustive tasks cast
-  several differently-worded nets and union the results, then judge yourself.
 - For plain text files and non-web work, use your usual tools — ax is for
   the web.

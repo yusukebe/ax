@@ -324,8 +324,7 @@ ax https://site.com '.card' --count`}</pre>
             </p>
             <pre>{`ax url '.item' --row 'title=a, href=a@href'
 ax url 'table' --table --where 'Stars > 100'
-ax url --md --budget 800   # docs as markdown
-ax url '.review' --like 'battery complaints'`}</pre>
+ax url --md --budget 800   # docs as markdown`}</pre>
           </article>
         </div>
       </section>
@@ -368,7 +367,7 @@ ax url '.review' --like 'battery complaints'`}</pre>
             <span class='m ok'>✓</span>
           </div>
           <div class='vrow'>
-            <span>semantic ranking (--like), offline · page → markdown (--md)</span>
+            <span>page → readable markdown (--md)</span>
             <span class='m no'>✗</span>
             <span class='m no'>✗</span>
             <span class='m ok'>✓</span>

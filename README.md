@@ -19,7 +19,7 @@ ax replaces the loop with one command:
 
 - **Fetch, never silent** — `{status, ok, ms, headers, body}` for every request. Empty bodies and error statuses still produce a full report. JSON bodies are parsed. Repeat fetches are cached for ~2 minutes, so probing is free.
 - **Discover, don't dump** — `--outline` shows a page's repeating structures; `--locate 'text'` answers "which selector holds this?" — no raw HTML ever hits the context.
-- **Extract, structured** — `--row 'title=a, href=a@href'` pulls multi-field rows in one call; `--table` turns `<table>` into keyed rows; `--where` filters with a safe expression language; `--like` ranks matches by _meaning_ (local embedding model, offline).
+- **Extract, structured** — `--row 'title=a, href=a@href'` pulls multi-field rows in one call; `--table` turns `<table>` into keyed rows; `--where` filters with a safe expression language.
 - **Token-cheap by design** — results cap at 50 with a stderr note (never silent truncation), `--budget <tokens>` caps output by estimated tokens, `--tsv` emits header-once rows.
 
 ## Install
@@ -46,7 +46,6 @@ Teach your agent: `npx skills add yusukebe/ax` — or have it run `ax agent-cont
 | multi-field rows in one call (`--row`)         |   △ _write it_   |      ✗       |  ✓  |
 | `<table>` → keyed rows                         |   △ _write it_   |      ✗       |  ✓  |
 | survives markup drift                          |   ✗ _(regex)_    |      ✓       |  ✓  |
-| semantic ranking (`--like`), offline           |        ✗         |      ✗       |  ✓  |
 | page → readable markdown (`--md`)              |        ✗         |      ✗       |  ✓  |
 | token-shaped output (caps, `--budget`, notes)  |        ✗         |      ✗       |  ✓  |
 | zero code authored per task                    |        ✗         |      ✓       |  ✓  |

@@ -27,9 +27,6 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
     ax URL '.item a' --attr href | --text | --html
     ax URL --md                            readable page as markdown (docs!)
     --where 'price > 100 && name ~ /^foo/i'    filter rows (safe expr, no eval)
-    --like 'battery complaints' [--min 0.3]    rank matches by MEANING
-      (local model, offline, deterministic — a funnel, not an oracle: for
-       exhaustive tasks cast several differently-worded --like nets and union)
 
 ## Output rules
 

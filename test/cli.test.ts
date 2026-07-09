@@ -1,6 +1,6 @@
 import { test, expect, beforeAll } from 'bun:test'
 import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir, homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 // Integration tests for the single-command surface: ax <src> [selector] [flags]
@@ -101,14 +101,3 @@ test('cap: default limit with stderr note', () => {
   expect(r.err).toContain('hidden')
 })
 
-const cached = await Bun.file(join(homedir(), '.cache', 'ax', 'minilm-q8.onnx')).exists()
-test.skipIf(!cached)('--like ranks matches by meaning', () => {
-  writeFileSync(
-    join(dir, 'reviews.html'),
-    `<div><p class="r">battery dies in two hours</p><p class="r">screen is gorgeous</p><p class="r">charger overheats badly</p></div>`
-  )
-  const r = ax(['reviews.html', '.r', '--like', 'power and charging problems', '--limit', '2'])
-  const lines = r.out.split('\n')
-  expect(lines.join(' ')).toContain('charger')
-  expect(lines.join(' ')).not.toContain('gorgeous')
-})
