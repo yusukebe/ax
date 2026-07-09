@@ -26,6 +26,7 @@ beforeAll(() => {
       if (url.pathname === '/big') return new Response('x'.repeat(10000))
       if (url.pathname === '/echo')
         return req.text().then((t) => new Response(`${req.method}:${t}`))
+      if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
       return new Response('not found', { status: 404 })
     },
   })
@@ -70,4 +71,23 @@ test('http: connection refused is a structured error with a hint', async () => {
   const r = await ax(['http://localhost:1/nope'])
   expect(r.code).toBe(1)
   expect(r.err).toContain('is the server running')
+})
+
+test('curl reflexes: -u sends basic auth, -I does HEAD, --data-raw posts', async () => {
+  const auth = await ax([`http://localhost:${server.port}/auth`, '-u', 'me:secret'])
+  expect(JSON.parse(auth.out).body).toBe('Basic ' + Buffer.from('me:secret').toString('base64'))
+  const head = await ax([`http://localhost:${server.port}/echo`, '-I'])
+  expect(JSON.parse(head.out).status).toBe(200)
+  const raw = await ax([`http://localhost:${server.port}/echo`, '--data-raw', 'xyz'])
+  expect(JSON.parse(raw.out).body).toBe('POST:xyz')
+})
+
+test('curl reflexes: no-op flags accepted silently, -o saves body', async () => {
+  const r = await ax([`http://localhost:${server.port}/json`, '-L', '-s', '-i', '-f'])
+  expect(JSON.parse(r.out).ok).toBe(true)
+  expect(r.err).not.toContain('unknown')
+  const out = `${process.env.TMPDIR ?? '/tmp'}/ax-o-test.json`
+  const saved = await ax([`http://localhost:${server.port}/json`, '-o', out])
+  expect(JSON.parse(saved.out).saved).toBe(out)
+  expect(await Bun.file(out).text()).toContain('users')
 })

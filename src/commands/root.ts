@@ -13,6 +13,8 @@ usage:
 fetch (no selector — curl parity, but never silent):
   ax https://api.example.com/users        {status, ok, ms, headers, body}
   -X, --method <m>   -H, --header <k: v>   -d, --data <body>
+  curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
+  --data-raw/--data-binary; -L -i -s -S -f --compressed are accepted no-ops
   JSON bodies are parsed; repeat fetches of one URL are cached ~2min (--fresh)
   noisy response headers are omitted (announced; --headers shows all)
 
@@ -159,6 +161,21 @@ export async function root(argv: string[]) {
     method: { type: 'string', short: 'X' },
     header: { type: 'string', short: 'H', multiple: true },
     data: { type: 'string', short: 'd' },
+    // curl reflexes — an agent typing curl habits gets curl behavior:
+    user: { type: 'string', short: 'u' },
+    head: { type: 'boolean', short: 'I' },
+    output: { type: 'string', short: 'o' },
+    insecure: { type: 'boolean', short: 'k' },
+    'max-time': { type: 'string', short: 'm' },
+    'data-raw': { type: 'string' },
+    'data-binary': { type: 'string' },
+    // accepted no-ops (ax always behaves this way):
+    location: { type: 'boolean', short: 'L' },
+    include: { type: 'boolean', short: 'i' },
+    silent: { type: 'boolean', short: 's' },
+    'show-error': { type: 'boolean', short: 'S' },
+    fail: { type: 'boolean', short: 'f' },
+    compressed: { type: 'boolean' },
   })
   if (flags.help || _.length === 0) return console.log(rootHelp)
 
@@ -184,24 +201,48 @@ export async function root(argv: string[]) {
       if (idx === -1) fail(`bad header (expected 'Name: value'): ${h}`)
       headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim()
     }
+    if (typeof flags.user === 'string') {
+      headers['authorization'] = 'Basic ' + Buffer.from(flags.user).toString('base64')
+    }
+    const data = [flags.data, flags['data-raw'], flags['data-binary']].find(
+      (d): d is string => typeof d === 'string'
+    )
     const method =
       typeof flags.method === 'string'
         ? flags.method.toUpperCase()
-        : flags.data !== undefined
-          ? 'POST'
-          : 'GET'
+        : flags.head === true
+          ? 'HEAD'
+          : data !== undefined
+            ? 'POST'
+            : 'GET'
+    const timeoutMs =
+      typeof flags['max-time'] === 'string' ? Number(flags['max-time']) * 1000 : undefined
     const started = performance.now()
     let res: Response
     try {
       res = await fetch(src!, {
         method,
         headers,
-        body: typeof flags.data === 'string' ? flags.data : undefined,
+        body: data,
+        signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
+        ...(flags.insecure === true ? { tls: { rejectUnauthorized: false } } : {}),
       })
     } catch (e) {
       return fail(`request failed: ${(e as Error).message}`, `is the server running at ${src}?`)
     }
     const ms = Math.round(performance.now() - started)
+    if (typeof flags.output === 'string') {
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      await Bun.write(flags.output, bytes)
+      process.stdout.write(
+        JSON.stringify(
+          { status: res.status, ok: res.ok, ms, saved: flags.output, bytes: bytes.length },
+          null,
+          2
+        ) + '\n'
+      )
+      process.exit(0)
+    }
     const raw = await res.text()
     const budgetTokens = flags.all === true ? Infinity : opts.budget > 0 ? opts.budget : 500
     const maxChars = budgetTokens * 4

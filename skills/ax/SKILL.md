@@ -13,6 +13,7 @@ HTML, and never use bare curl (it returns nothing on empty bodies).
 ```sh
 ax https://api.site.example/users                    # {status, ok, ms, headers, body} — never silent
 ax https://api.site.example/users -H 'authorization: Bearer x' -X POST -d '{"a":1}'
+# curl reflexes work: -u -I -o -k -m --data-raw (and -L/-i/-s/-f are no-ops)
 ax https://site.example --outline                    # discover: repeating structures
 ax https://site.example --locate 'some text'         # discover: which selector holds this
 ax https://site.example '.card' --count              # confirm a hypothesis
