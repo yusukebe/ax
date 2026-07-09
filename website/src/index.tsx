@@ -37,7 +37,7 @@ box-shadow:0 4px 0 #d94a10;transition:.15s}
 .intro{max-width:1080px;margin:0 auto;padding:70px 36px 60px;display:grid;
 grid-template-columns:minmax(0,1fr) 340px;gap:48px;align-items:center}
 .hero-art{display:flex;flex-direction:column;align-items:center;gap:28px}
-.mascot{font-size:140px;line-height:1;
+.mascot{line-height:0;
 animation:float 4s ease-in-out infinite;filter:drop-shadow(0 10px 0 var(--shadow));user-select:none}
 @keyframes float{0%,100%{transform:translateY(0) rotate(-10deg)}50%{transform:translateY(-12px) rotate(-2deg)}}
 .term{width:100%;background:var(--card);border:2px solid var(--line);border-radius:16px;
@@ -129,7 +129,7 @@ justify-content:space-between;gap:20px;flex-wrap:wrap;font-size:13px;color:var(-
 @media(max-width:960px){
 .intro{grid-template-columns:1fr;gap:24px}
 .hero-art{flex-direction:row;justify-content:center}
-.mascot{font-size:80px}
+.mascot svg{width:90px;height:auto}
 .term{max-width:420px}
 .agents .cols{grid-template-columns:1fr;gap:24px}
 }
@@ -156,6 +156,44 @@ document.querySelectorAll('[data-copy]').forEach(function(btn){
 const INSTALL_CMD = 'curl -fsSL https://ax.yusuke.run/install | sh'
 const AGENT_PROMPT =
   'ax is installed. Run `ax agent-context` to learn it — use it instead of throwaway scripts.'
+
+const Axe = ({ size }: { size: number }) => (
+  <svg
+    width={size}
+    height={Math.round((size * 130) / 120)}
+    viewBox='0 0 120 130'
+    aria-hidden='true'
+  >
+    <g transform='rotate(22 60 65)'>
+      <rect
+        x='58'
+        y='34'
+        width='15'
+        height='88'
+        rx='8'
+        fill='#fff3e0'
+        stroke='#46372d'
+        stroke-width='4.5'
+        stroke-linejoin='round'
+      />
+      <path
+        d='M76 28 L38 23 C26 21 14 13 12 14 C5 36 5 56 12 78 C14 79 26 70 38 66 L76 50 Z'
+        fill='#ff5c1a'
+        stroke='#46372d'
+        stroke-width='4.5'
+        stroke-linejoin='round'
+      />
+      <path
+        d='M17 26 C12 42 12 52 17 66'
+        stroke='#fff'
+        opacity='.4'
+        stroke-width='5.5'
+        fill='none'
+        stroke-linecap='round'
+      />
+    </g>
+  </svg>
+)
 
 const Page = () => (
   <html lang='en'>
@@ -186,14 +224,14 @@ const Page = () => (
       <meta name='twitter:image' content='https://ax.yusuke.run/og.png' />
       <link
         rel='icon'
-        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪓</text></svg>"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 130'><g transform='rotate(22 60 65)'><rect x='58' y='34' width='15' height='88' rx='8' fill='%23fff3e0' stroke='%2346372d' stroke-width='4.5'/><path d='M76 28 L38 23 C26 21 14 13 12 14 C5 36 5 56 12 78 C14 79 26 70 38 66 L76 50 Z' fill='%23ff5c1a' stroke='%2346372d' stroke-width='4.5' stroke-linejoin='round'/></g></svg>"
       />
       <style dangerouslySetInnerHTML={{ __html: css }} />
     </head>
     <body>
       <header class='top'>
         <div class='logo'>
-          🪓 <b>ax</b>
+          <Axe size={22} /> <b>ax</b>
         </div>
         <a class='star' href='https://github.com/yusukebe/ax'>
           <svg viewBox='0 0 16 16' aria-hidden='true'>
@@ -232,7 +270,9 @@ const Page = () => (
           </div>
         </div>
         <div class='hero-art'>
-          <div class='mascot'>🪓</div>
+          <div class='mascot'>
+            <Axe size={150} />
+          </div>
           <div class='term'>
             <div class='bar'>
               <span class='dot'></span>
