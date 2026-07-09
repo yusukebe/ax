@@ -241,15 +241,17 @@ const Page = () => (
             </div>
             <pre
               dangerouslySetInnerHTML={{
-                __html: `<span class="p">$</span> ax https://site.com '.lesson' \\
-    --row 'title=a, level=.cefr'
-title        level
-Small talk   A2
-Directions   A2
+                __html: `<span class="c"># what's on this page?</span>
+<span class="p">$</span> ax https://shop.com --outline
+   80  .prod
+<span class="c"># pull it out, structured</span>
+<span class="p">$</span> ax https://shop.com '.prod' \\
+    --row 'name=h3, price=.price'
+name        price
+Desk Lamp   $29
+Mug         $12
 ...
-<span class="c">ax: note: 50 rows extracted, no empty fields</span>
-<span class="p">$</span> ax https://site.com --outline
-   50  div.lesson`,
+<span class="c">ax: note: 80 rows extracted, no empty fields</span>`,
               }}
             />
           </div>
