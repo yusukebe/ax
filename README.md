@@ -56,13 +56,14 @@ Teach your agent: `npx skills add yusukebe/ax` — or have it run `ax agent-cont
 
 Real headless Claude Code sessions, same task, with and without ax — answers graded, both sides correct in every run:
 
-| task                                       | without ax   | with ax           |
-| ------------------------------------------ | ------------ | ----------------- |
-| live website extraction (real site)        | $0.332 · 41s | **$0.303 · 36s**  |
-| two pages with markup drift (breaks regex) | $0.664       | **$0.338 (−49%)** |
-| clean extraction, 300 rows + aggregate     | $0.267 · 40s | **$0.250 · 29s**  |
+| task (Opus 4.8, agent already knows ax)     | without ax   | with ax                 |
+| ------------------------------------------- | ------------ | ----------------------- |
+| two pages with markup drift (breaks regex)  | $0.458       | **$0.150 (−67%)**       |
+| clean extraction from a 60-item catalog     | $0.296 · 24s | **$0.104 · 14s (−65%)** |
+| live website, decoy markup (median of 3)    | $0.248       | **$0.191 (−23%)**       |
+| markup drift, agent's first-ever use of ax  | $0.664       | **$0.282 (−58%)**       |
 
-Full method — including the tasks ax _lost_ — in [bench/RESULTS.md](bench/RESULTS.md).
+Full method — including the runs ax _lost_ — in [bench/RESULTS.md](bench/RESULTS.md).
 
 ## The full flag reference
 
@@ -70,4 +71,4 @@ Run `ax --help`, or `ax agent-context` for the agent-oriented playbook (also ser
 
 ## Built with
 
-[Bun](https://bun.sh) (single-file binary via `bun build --compile`), [linkedom](https://github.com/WebReflection/linkedom) for standard-DOM parsing, [onnxruntime-web](https://onnxruntime.ai/) + quantized MiniLM for offline `--like`. The multi-tool era of ax (json/yaml/text/stats/enc/time subcommands) lives on the [`toolkit`](https://github.com/yusukebe/ax/tree/toolkit) branch.
+[Bun](https://bun.sh) (single-file binary via `bun build --compile`) and [linkedom](https://github.com/WebReflection/linkedom) for standard-DOM parsing. The multi-tool era of ax (json/yaml/text/stats/enc/time subcommands) lives on the [`toolkit`](https://github.com/yusukebe/ax/tree/toolkit) branch.
