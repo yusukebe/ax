@@ -1,5 +1,6 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 
 // Explore-then-extract means the same URL gets probed many times in a row;
 // re-downloading it every probe wastes seconds per turn. Short-TTL cache.
@@ -15,6 +16,7 @@ export type FetchGuards = {
   maxBytes?: number
   timeoutMs?: number
   fresh?: boolean
+  noCache?: boolean
 }
 
 export function guardsFromFlags(flags: Record<string, unknown>): Required<FetchGuards> {
@@ -24,8 +26,45 @@ export function guardsFromFlags(flags: Record<string, unknown>): Required<FetchG
     maxBytes: Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_BYTES,
     timeoutMs: Number.isFinite(mt) && mt > 0 ? mt : DEFAULT_TIMEOUT_MS,
     fresh: flags.fresh === true,
+    noCache: flags['no-cache'] === true,
   }
 }
+
+// Cached pages can contain private content, so the cache is owner-only:
+// directory 0700, files 0600, written to a temp name then atomically
+// renamed (a concurrent read never sees a half-written body). Platforms
+// without POSIX modes (Windows) just skip the permission bits.
+async function cacheWrite(key: string, text: string): Promise<void> {
+  try {
+    await mkdir(FETCH_CACHE, { recursive: true, mode: 0o700 })
+    // mkdir leaves a pre-existing dir's mode alone — tighten it explicitly
+    // so caches created by older ax versions are fixed too.
+    if (process.platform !== 'win32') await chmod(FETCH_CACHE, 0o700).catch(() => {})
+    const tmp = join(FETCH_CACHE, `.tmp-${key}-${process.pid}`)
+    await writeFile(tmp, text, { mode: 0o600 })
+    await rename(tmp, join(FETCH_CACHE, key))
+  } catch {
+    // Caching is an optimization; failing to cache must never fail the read.
+  }
+  sweepExpired().catch(() => {})
+}
+
+// Drop entries past their TTL so stale private content does not sit on
+// disk indefinitely. Runs opportunistically after writes; the dir is tiny.
+async function sweepExpired(): Promise<void> {
+  const entries = await readdir(FETCH_CACHE).catch(() => [] as string[])
+  const now = Date.now()
+  for (const name of entries) {
+    const p = join(FETCH_CACHE, name)
+    const s = await stat(p).catch(() => null)
+    if (!s) continue
+    const expired = now - s.mtimeMs > FETCH_TTL_MS
+    if (expired || name.startsWith('.tmp-')) await unlink(p).catch(() => {})
+  }
+}
+
+// URLs that visibly carry credentials should not leave bodies on disk.
+const SENSITIVE_URL = /[?&](token|api[_-]?key|key|secret|signature|sig|password|auth)=/i
 
 export type CappedBody = { bytes: Uint8Array; capped: boolean }
 
@@ -113,7 +152,13 @@ export async function readSource(src: string | undefined, guards?: FetchGuards):
     const key = new Bun.CryptoHasher('sha256').update(src).digest('hex').slice(0, 24)
     const cached = Bun.file(join(FETCH_CACHE, key))
     const fresh = guards?.fresh ?? process.argv.includes('--fresh')
-    if (!fresh && (await cached.exists()) && Date.now() - cached.lastModified < FETCH_TTL_MS) {
+    const noCache = guards?.noCache ?? process.argv.includes('--no-cache')
+    if (
+      !fresh &&
+      !noCache &&
+      (await cached.exists()) &&
+      Date.now() - cached.lastModified < FETCH_TTL_MS
+    ) {
       const age = Math.round((Date.now() - cached.lastModified) / 1000)
       process.stderr.write(`ax: note: using ${age}s-old cached fetch (--fresh to refetch)\n`)
       return await cached.text()
@@ -137,8 +182,12 @@ export async function readSource(src: string | undefined, guards?: FetchGuards):
     }
     const text = new TextDecoder().decode(body.bytes)
     // Only complete bodies are cached — a capped or aborted read must never
-    // be served later as if it were the real page.
-    await Bun.write(join(FETCH_CACHE, key), text)
+    // be served later as if it were the real page. Servers that say
+    // no-store, credential-bearing URLs, and --no-cache all skip the disk.
+    const noStore = (res.headers.get('cache-control') ?? '').toLowerCase().includes('no-store')
+    if (!noCache && !noStore && !SENSITIVE_URL.test(src)) {
+      await cacheWrite(key, text)
+    }
     return text
   }
   const file = Bun.file(src)

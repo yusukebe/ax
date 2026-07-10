@@ -23,7 +23,9 @@ fetch (no selector — curl parity, but never silent):
   -X, --method <m>   -H, --header <k: v>   -d, --data <body>
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
   --data-raw/--data-binary; -L -i -s -S -f --compressed are accepted no-ops
-  JSON bodies are parsed; repeat fetches of one URL are cached ~2min (--fresh)
+  JSON bodies are parsed; repeat fetches of one URL are cached ~2min
+  (--fresh refetches; --no-cache skips the disk entirely; Cache-Control:
+  no-store and credential-bearing URLs are never cached)
   noisy response headers are omitted (announced; --headers shows all)
   downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>; capped
   reads are always announced, never silent)
@@ -182,6 +184,7 @@ export async function root(argv: string[]) {
   const { _, flags } = parseArgs(argv, {
     help: { type: 'boolean' },
     fresh: { type: 'boolean' },
+    'no-cache': { type: 'boolean' },
     headers: { type: 'boolean' },
     all: { type: 'boolean' },
     text: { type: 'boolean' },
