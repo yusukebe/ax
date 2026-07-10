@@ -22,7 +22,8 @@ fetch (no selector — curl parity, but never silent):
   ax https://api.example.com/users        {status, ok, ms, headers, body}
   -X, --method <m>   -H, --header <k: v>   -d, --data <body>
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
-  --data-raw/--data-binary; -L -i -s -S -f --compressed are accepted no-ops
+  -f (HTTP errors -> exit 22, report still printed)  --data-raw/--data-binary
+  -L -i -s -S --compressed are accepted no-ops
   JSON bodies are parsed; repeat fetches of one URL are cached ~2min
   (--fresh refetches; --no-cache skips the disk entirely; Cache-Control:
   no-store and credential-bearing URLs are never cached)
@@ -213,12 +214,12 @@ export async function root(argv: string[]) {
     'max-bytes': { type: 'string' },
     'data-raw': { type: 'string' },
     'data-binary': { type: 'string' },
+    fail: { type: 'boolean', short: 'f' },
     // accepted no-ops (ax always behaves this way):
     location: { type: 'boolean', short: 'L' },
     include: { type: 'boolean', short: 'i' },
     silent: { type: 'boolean', short: 's' },
     'show-error': { type: 'boolean', short: 'S' },
-    fail: { type: 'boolean', short: 'f' },
     compressed: { type: 'boolean' },
   })
   if (flags.help || _.length === 0) return console.log(rootHelp)
@@ -363,6 +364,13 @@ export async function root(argv: string[]) {
         2
       ) + '\n'
     )
+    // curl parity: -f turns HTTP errors into a failing exit code (curl uses
+    // 22). Unlike curl we still print the full report — the agent needs the
+    // status and body to act, never-silent applies to failures most of all.
+    if (flags.fail === true && !res.ok) {
+      process.stderr.write(`ax: -f: HTTP ${res.status} -> exit 22\n`)
+      process.exit(22)
+    }
     process.exit(0)
   }
 
