@@ -165,3 +165,35 @@ test('--table: colspan/rowspan expansion, multi-row headers, nested tables (#2)'
   expect(t4).toHaveLength(1)
   expect(t4[0]).toEqual({ A: 'outer1', B: 'inner1inner2' })
 })
+
+test('security: ANSI escapes and OSC sequences are stripped from extracted text', () => {
+  const ESC = '\x1b'
+  const BEL = '\x07'
+  writeFileSync(
+    join(dir, 'evil.html'),
+    `<div><p class="e">safe${ESC}]0;pwned${BEL}text${ESC}[31mred${ESC}[0m</p>` +
+      `<p class="e">osc52${ESC}]52;c;${Buffer.from('stolen').toString('base64')}${BEL}end</p></div>`
+  )
+  const r = ax(['evil.html', '.e'])
+  expect(r.out).not.toContain(ESC)
+  expect(r.out).not.toContain(BEL)
+  expect(r.out).toContain('safe')
+  expect(r.out).toContain('red')
+  expect(r.err).toContain('control character')
+})
+
+test('security: tabs survive in TSV, controls are stripped from cells', () => {
+  writeFileSync(
+    join(dir, 'evil2.html'),
+    '<div><div class="r"><span class="a">x\x1b[2Jy</span><span class="b">ok</span></div></div>'
+  )
+  const r = ax(['evil2.html', '.r', '--row', 'a=.a, b=.b'])
+  expect(r.out.split('\n')[1]).toBe('xy\tok')
+})
+
+test('security: JSON output escapes control chars (unchanged behavior)', () => {
+  writeFileSync(join(dir, 'evil3.html'), '<p class="j">a\x1b[31mb</p>')
+  const r = ax(['evil3.html', '.j', '--row', 'v=', '--json'])
+  expect(r.out).toContain('\\u001b')
+  expect(JSON.parse(r.out)[0].v).toBe('a\x1b[31mb')
+})
