@@ -25,9 +25,7 @@ fetch (no selector — curl parity, but never silent):
   -f (HTTP errors -> exit 22, report still printed)  --data-raw/--data-binary
   -L -i -s -S --compressed are accepted no-ops
   --body             body only on stdout, uncapped (notes on stderr; for pipes)
-  JSON bodies are parsed; repeat fetches of one URL are cached ~2min
-  (--fresh refetches; --no-cache skips the disk entirely; Cache-Control:
-  no-store and credential-bearing URLs are never cached)
+  JSON bodies are parsed; fetch mode never caches — every request is live
   noisy response headers are omitted (announced; --headers shows all)
   downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>; capped
   reads are always announced, never silent)
@@ -36,6 +34,9 @@ discover (unknown page? never dump raw HTML):
   --outline          repeating tag.class signatures with counts
   --locate <text>    which selector holds this text (matches attributes too)
   --count            how many elements match <selector>
+  parse-mode URLs are cached ~2min so probing is free (hits announced;
+  --fresh = refetch then re-cache, --no-cache = never touch the disk;
+  Cache-Control: no-store and credential-bearing URLs are never cached)
 
 extract (selector — CSS, structured):
   --row 'title=a, href=a@href, level=.cefr'   structured rows (@attr reads

@@ -14,8 +14,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
       -L/-i/-s/-S/--compressed are accepted no-ops
       --body prints the body only, uncapped (status notes move to stderr)
     → {status, ok, ms, headers, body}. Empty bodies and error statuses still
-      produce a full report. JSON bodies are parsed. Repeat fetches of a URL
-      are cached ~2min (--fresh to bypass; cache hits are announced).
+      produce a full report. JSON bodies are parsed. Fetch mode never
+      caches — every request is live.
       Downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>);
       capped or timed-out reads are always announced, never silent.
 
@@ -24,6 +24,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
     ax https://site.example --outline          repeating tag.class + counts
     ax https://site.example --locate 'text'    which selector holds this text
     ax https://site.example '.card' --count    test a selector hypothesis
+      parse-mode URLs are cached ~2min, so probing is free (hits announced;
+      --fresh = refetch then re-cache, --no-cache = never touch the disk)
 
 ## Extract (CSS selectors — structured, no regex)
 
