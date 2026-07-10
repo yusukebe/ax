@@ -74,6 +74,26 @@ test('extract: --md produces readable markdown', () => {
   expect(r.out).not.toContain('Home') // nav stripped
 })
 
+test('extract: --md converts <a> inside <p>, <li>, <blockquote>, <th>, <td> to [text](url)', () => {
+  writeFileSync(
+    join(dir, 'links.html'),
+    `<html><body><article>
+      <h2>Links</h2>
+      <p>See <a href="https://example.com">this link</a> for details.</p>
+      <blockquote>Quote <a href="/q">source</a></blockquote>
+      <ul><li>Item with <a href="/page2">a link</a></li></ul>
+      <table><tr><th><a href="/h-sort">Name</a></th><th>Age</th></tr><tr><td><a href="/alice">Alice</a></td><td>30</td></tr></table>
+    </article></body></html>`
+  )
+  const r = ax(['links.html', '--md'])
+  expect(r.out).toContain('## Links')
+  expect(r.out).toContain('[this link](https://example.com)')
+  expect(r.out).toContain('> Quote [source](/q)')
+  expect(r.out).toContain('- Item with [a link](/page2)')
+  expect(r.out).toContain('[Name](/h-sort) | ')
+  expect(r.out).toContain('[Alice](/alice)')
+})
+
 test('extract: --count and --attr', () => {
   expect(ax(['page.html', '.card', '--count']).out).toBe('2')
   expect(ax(['page.html', '.card a', '--attr', 'href']).out.split('\n')).toEqual([

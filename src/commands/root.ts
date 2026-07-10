@@ -97,6 +97,32 @@ function selectorPath(el: Element): string {
 }
 
 // --md: readable main content as markdown — the docs-reading path.
+// Convert inline content to markdown, turning <a> into [text](url).
+function inlineToMd(el: Element): string {
+  let out = ''
+  const walkNode = (node: Element) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) {
+        out += (child as Text).data
+        continue
+      }
+      if (child.nodeType !== 1) continue
+      const ce = child as Element
+      if (ce.localName === 'a') {
+        const href = ce.getAttribute('href') ?? ''
+        const inner = inlineToMd(ce)
+        out += href ? `[${inner}](${href})` : inner
+      } else if (ce.localName === 'br') {
+        out += ' '
+      } else {
+        walkNode(ce)
+      }
+    }
+  }
+  walkNode(el)
+  return out
+}
+
 function toMarkdown(root: Element): string {
   const out: string[] = []
   const walk = (el: Element, depth: number) => {
@@ -108,22 +134,26 @@ function toMarkdown(root: Element): string {
         )
       )
         continue
-      const text = collapse(child.textContent ?? '')
-      if (/^h[1-6]$/.test(tag) && text) {
-        out.push(`${'#'.repeat(Number(tag[1]))} ${text}`)
-      } else if (tag === 'p' && text) {
-        out.push(text)
+      if (/^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li' || tag === 'blockquote') {
+        const text = collapse(inlineToMd(child))
+        if (/^h[1-6]$/.test(tag) && text) {
+          out.push(`${'#'.repeat(Number(tag[1]))} ${text}`)
+        } else if (tag === 'p' && text) {
+          out.push(text)
+        } else if (tag === 'li' && text) {
+          out.push(`- ${text}`)
+        } else if (tag === 'blockquote' && text) {
+          out.push(`> ${text}`)
+        } else {
+          walk(child, depth + 1)
+        }
       } else if (tag === 'pre') {
         out.push('```\n' + (child.textContent ?? '').trim() + '\n```')
-      } else if (tag === 'li' && text) {
-        out.push(`- ${text}`)
       } else if (tag === 'table') {
         const rows = [...child.querySelectorAll('tr')].map((tr) =>
-          [...tr.querySelectorAll('th, td')].map((c) => collapse(c.textContent ?? '')).join(' | ')
+          [...tr.querySelectorAll('th, td')].map((c) => collapse(inlineToMd(c))).join(' | ')
         )
         out.push(rows.join('\n'))
-      } else if (tag === 'blockquote' && text) {
-        out.push(`> ${text}`)
       } else {
         walk(child, depth + 1)
       }
