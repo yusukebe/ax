@@ -1,7 +1,7 @@
 {
   "name": "ax",
   "version": "0.1.5",
-  "description": "A scriptless multitool for AI agents — extract from HTML, query JSON, and process text in one line instead of a throwaway python script",
+  "description": "The AI-era curl: fetch, discover, extract. One command.",
   "license": "MIT",
   "author": "Yusuke Wada <yusuke@kamawada.com>",
   "type": "module",
@@ -19,14 +19,12 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/js-yaml": "^4.0.9",
     "oxfmt": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "js-yaml": "^5.2.1",
     "linkedom": "^0.18.12"
   }
 }

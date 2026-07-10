@@ -27,12 +27,36 @@ beforeAll(() => {
       if (url.pathname === '/echo')
         return req.text().then((t) => new Response(`${req.method}:${t}`))
       if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
+      if (url.pathname === '/endless') {
+        // 1MB chunked stream, no Content-Length — hostile-sized body without
+        // starving the test runner's event loop (a truly infinite pull() would).
+        let sent = 0
+        return new Response(
+          new ReadableStream({
+            pull(controller) {
+              if (sent >= 256) return controller.close()
+              controller.enqueue(new TextEncoder().encode('x'.repeat(4096)))
+              sent++
+            },
+          })
+        )
+      }
+      if (url.pathname === '/stall') {
+        // Sends one chunk, then never finishes.
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('partial-data'))
+            },
+          })
+        )
+      }
       return new Response('not found', { status: 404 })
     },
   })
 })
 
-afterAll(() => server.stop())
+afterAll(() => server.stop(true))
 
 test('http: JSON body is parsed and pipeable', async () => {
   const r = await ax([`http://localhost:${server.port}/json`])
@@ -91,3 +115,35 @@ test('curl reflexes: no-op flags accepted silently, -o saves body', async () => 
   expect(JSON.parse(saved.out).saved).toBe(out)
   expect(await Bun.file(out).text()).toContain('users')
 })
+
+test('guard: endless stream stops at --max-bytes, announced in-band', async () => {
+  const r = await ax([`http://localhost:${server.port}/endless`, '--max-bytes', '10000'])
+  const rep = JSON.parse(r.out)
+  expect(rep.download_capped).toContain('10000 bytes')
+  expect(rep.status).toBe(200)
+})
+
+test('guard: parse mode refuses a capped body, never half-parses', async () => {
+  const r = await ax([
+    `http://localhost:${server.port}/endless`,
+    '.x',
+    '--max-bytes',
+    '10000',
+    '--fresh',
+  ])
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('exceeded 10000 bytes')
+})
+
+test('guard: stalled connection times out with -m, no hang', async () => {
+  const r = await ax([`http://localhost:${server.port}/stall`, '-m', '1'])
+  expect(r.code).toBe(1)
+  expect(r.err).toContain('timed out after 1s')
+}, 15000)
+
+test('guard: -o timeout leaves no partial file behind', async () => {
+  const out = `${process.env.TMPDIR ?? '/tmp'}/ax-partial-test.bin`
+  const r = await ax([`http://localhost:${server.port}/stall`, '-o', out, '-m', '1'])
+  expect(r.code).toBe(1)
+  expect(await Bun.file(out).exists()).toBe(false)
+}, 15000)
