@@ -107,7 +107,7 @@ test('curl reflexes: -u sends basic auth, -I does HEAD, --data-raw posts', async
 })
 
 test('curl reflexes: no-op flags accepted silently, -o saves body', async () => {
-  const r = await ax([`http://localhost:${server.port}/json`, '-L', '-s', '-i', '-f'])
+  const r = await ax([`http://localhost:${server.port}/json`, '-L', '-s', '-i'])
   expect(JSON.parse(r.out).ok).toBe(true)
   expect(r.err).not.toContain('unknown')
   const out = `${process.env.TMPDIR ?? '/tmp'}/ax-o-test.json`
@@ -147,3 +147,12 @@ test('guard: -o timeout leaves no partial file behind', async () => {
   expect(r.code).toBe(1)
   expect(await Bun.file(out).exists()).toBe(false)
 }, 15000)
+
+test('curl reflexes: -f exits 22 on HTTP errors but still prints the report', async () => {
+  const bad = await ax([`http://localhost:${server.port}/nope`, '-f'])
+  expect(bad.code).toBe(22)
+  expect(JSON.parse(bad.out).status).toBe(404)
+  expect(bad.err).toContain('exit 22')
+  const good = await ax([`http://localhost:${server.port}/json`, '-f'])
+  expect(good.code).toBe(0)
+})
