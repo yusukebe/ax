@@ -503,7 +503,7 @@ ax url --md --budget 800   # docs as markdown`}</pre>
           </li>
           <li>
             <span class='t'>source</span>
-            <code>git clone https://github.com/yusukebe/ax && cd ax && bun run build</code>
+            <code>git clone https://github.com/yusukebe/ax && cd ax && bun install && bun run build</code>
           </li>
         </ul>
       </section>
