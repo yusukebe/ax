@@ -24,6 +24,7 @@ fetch (no selector — curl parity, but never silent):
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
   -f (HTTP errors -> exit 22, report still printed)  --data-raw/--data-binary
   -L -i -s -S --compressed are accepted no-ops
+  --body             body only on stdout, uncapped (notes on stderr; for pipes)
   JSON bodies are parsed; repeat fetches of one URL are cached ~2min
   (--fresh refetches; --no-cache skips the disk entirely; Cache-Control:
   no-store and credential-bearing URLs are never cached)
@@ -215,6 +216,7 @@ export async function root(argv: string[]) {
     'data-raw': { type: 'string' },
     'data-binary': { type: 'string' },
     fail: { type: 'boolean', short: 'f' },
+    body: { type: 'boolean' },
     // accepted no-ops (ax always behaves this way):
     location: { type: 'boolean', short: 'L' },
     include: { type: 'boolean', short: 'i' },
@@ -318,6 +320,20 @@ export async function root(argv: string[]) {
       return fail(`read failed: ${(e as Error).message}`)
     }
     const raw = new TextDecoder().decode(capped.bytes)
+    // --body: the classic Unix pipe mode — body only on stdout, no display
+    // cap (downloads are still bounded by --max-bytes). Anything unusual is
+    // announced on stderr so the pipe never lies by omission.
+    if (flags.body === true) {
+      if (raw.length > 0) process.stdout.write(raw)
+      if (!res.ok) process.stderr.write(`ax: note: HTTP ${res.status} ${res.statusText}\n`)
+      if (raw.length === 0) process.stderr.write('ax: note: empty body\n')
+      if (capped.capped) {
+        process.stderr.write(
+          `ax: note: download stopped at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap)\n`
+        )
+      }
+      process.exit(flags.fail === true && !res.ok ? 22 : 0)
+    }
     const budgetTokens = flags.all === true ? Infinity : opts.budget > 0 ? opts.budget : 500
     const maxChars = budgetTokens * 4
     const truncated = raw.length > maxChars

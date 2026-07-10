@@ -156,3 +156,17 @@ test('curl reflexes: -f exits 22 on HTTP errors but still prints the report', as
   const good = await ax([`http://localhost:${server.port}/json`, '-f'])
   expect(good.code).toBe(0)
 })
+
+test('--body: body only on stdout, uncapped, notes on stderr', async () => {
+  const big = await ax([`http://localhost:${server.port}/big`, '--body'])
+  expect(big.out.length).toBe(10000) // no display cap in body mode
+  expect(big.code).toBe(0)
+  const nf = await ax([`http://localhost:${server.port}/nope`, '--body'])
+  expect(nf.out).toBe('not found')
+  expect(nf.err).toContain('HTTP 404')
+  const empty = await ax([`http://localhost:${server.port}/empty`, '--body'])
+  expect(empty.out).toBe('')
+  expect(empty.err).toContain('empty body')
+  const failed = await ax([`http://localhost:${server.port}/nope`, '--body', '-f'])
+  expect(failed.code).toBe(22)
+})
