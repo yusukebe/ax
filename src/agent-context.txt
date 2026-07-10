@@ -14,6 +14,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
     → {status, ok, ms, headers, body}. Empty bodies and error statuses still
       produce a full report. JSON bodies are parsed. Repeat fetches of a URL
       are cached ~2min (--fresh to bypass; cache hits are announced).
+      Downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>);
+      capped or timed-out reads are always announced, never silent.
 
 ## Discover (unknown page? never dump raw HTML into context)
 
