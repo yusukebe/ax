@@ -3,9 +3,44 @@ import { duelBefore, installSh, llmsTxt, ogPngB64, skillMd } from './content.gen
 
 const app = new Hono()
 
-app.get('/install', (c) => c.text(installSh))
-app.get('/llms.txt', (c) => c.text(llmsTxt))
-app.get('/skill.md', (c) => c.text(skillMd))
+// CSP hashes for the two inline blocks (computed once at isolate start).
+// No 'unsafe-inline': only these exact <style>/<script> bodies may run.
+const cspHash = async (s: string) =>
+  'sha256-' +
+  btoa(
+    String.fromCharCode(
+      ...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))
+    )
+  )
+
+app.use('*', async (c, next) => {
+  await next()
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  c.header('X-Content-Type-Options', 'nosniff')
+  c.header('Referrer-Policy', 'strict-origin-when-cross-origin')
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  if ((c.res.headers.get('content-type') ?? '').includes('text/html')) {
+    c.header(
+      'Content-Security-Policy',
+      [
+        "default-src 'none'",
+        `style-src '${await cspHash(css)}'`,
+        `script-src '${await cspHash(js)}'`,
+        "img-src 'self' data:",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+      ].join('; ')
+    )
+  } else {
+    c.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'")
+  }
+})
+
+const TEXT_CACHE = { 'Cache-Control': 'public, max-age=300' }
+app.get('/install', (c) => c.text(installSh, 200, TEXT_CACHE))
+app.get('/llms.txt', (c) => c.text(llmsTxt, 200, TEXT_CACHE))
+app.get('/skill.md', (c) => c.text(skillMd, 200, TEXT_CACHE))
 app.get('/og.png', (c) => {
   const bytes = Uint8Array.from(atob(ogPngB64), (ch) => ch.charCodeAt(0))
   return c.body(bytes, 200, {
