@@ -36,3 +36,24 @@ const svg = `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http:/
 const png = new Resvg(svg, { fitTo: { mode: 'width', value: 1200 } }).render().asPng()
 await Bun.write(new URL('src/og.png', import.meta.url), png)
 console.log(`wrote src/og.png (${png.length} bytes)`)
+
+// PNG favicons — Safari does not render SVG data-URI favicons, so the tab
+// icon needs a raster fallback. Same axe as the site header/hero.
+const axeSvg = (
+  size: number
+) => `<svg width="${size}" height="${size}" viewBox="0 0 130 130" xmlns="http://www.w3.org/2000/svg">
+  <g transform="translate(5 0) rotate(22 60 65)">
+    <rect x="58" y="34" width="15" height="88" rx="8" fill="#fff3e0" stroke="#46372d" stroke-width="4.5"/>
+    <path d="M76 28 L38 23 C26 21 14 13 12 14 C5 36 5 56 12 78 C14 79 26 70 38 66 L76 50 Z" fill="#ff5c1a" stroke="#46372d" stroke-width="4.5" stroke-linejoin="round"/>
+    <path d="M17 26 C12 42 12 52 17 66" stroke="#ffffff" opacity=".4" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>`
+
+for (const [file, size] of [
+  ['src/favicon.png', 64],
+  ['src/apple-touch-icon.png', 180],
+] as const) {
+  const p = new Resvg(axeSvg(size), { fitTo: { mode: 'width', value: size } }).render().asPng()
+  await Bun.write(new URL(file, import.meta.url), p)
+  console.log(`wrote ${file} (${p.length} bytes)`)
+}

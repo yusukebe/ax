@@ -9,3 +9,5 @@ bench/*.html
 bench/*.json
 bench/*.log
 website/.wrangler/
+website/src/favicon.png
+website/src/apple-touch-icon.png

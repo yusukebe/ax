@@ -1,5 +1,13 @@
 import { Hono } from 'hono'
-import { duelBefore, installSh, llmsTxt, ogPngB64, skillMd } from './content.gen'
+import {
+  duelBefore,
+  faviconPngB64,
+  installSh,
+  llmsTxt,
+  ogPngB64,
+  skillMd,
+  touchIconPngB64,
+} from './content.gen'
 
 const app = new Hono()
 
@@ -41,13 +49,11 @@ const TEXT_CACHE = { 'Cache-Control': 'public, max-age=300' }
 app.get('/install', (c) => c.text(installSh, 200, TEXT_CACHE))
 app.get('/llms.txt', (c) => c.text(llmsTxt, 200, TEXT_CACHE))
 app.get('/skill.md', (c) => c.text(skillMd, 200, TEXT_CACHE))
-app.get('/og.png', (c) => {
-  const bytes = Uint8Array.from(atob(ogPngB64), (ch) => ch.charCodeAt(0))
-  return c.body(bytes, 200, {
-    'Content-Type': 'image/png',
-    'Cache-Control': 'public, max-age=86400',
-  })
-})
+const PNG_HEADERS = { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' }
+const png = (b64: string) => Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0))
+app.get('/og.png', (c) => c.body(png(ogPngB64), 200, PNG_HEADERS))
+app.get('/favicon.png', (c) => c.body(png(faviconPngB64), 200, PNG_HEADERS))
+app.get('/apple-touch-icon.png', (c) => c.body(png(touchIconPngB64), 200, PNG_HEADERS))
 
 const css = `
 :root{--bg:#fff7ec;--card:#fffdf9;--ink:#46372d;--soft:#a08d7c;--line:#f3e2cd;
@@ -261,6 +267,9 @@ const Page = () => (
         rel='icon'
         href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 130'><g transform='rotate(22 60 65)'><rect x='58' y='34' width='15' height='88' rx='8' fill='%23fff3e0' stroke='%2346372d' stroke-width='4.5'/><path d='M76 28 L38 23 C26 21 14 13 12 14 C5 36 5 56 12 78 C14 79 26 70 38 66 L76 50 Z' fill='%23ff5c1a' stroke='%2346372d' stroke-width='4.5' stroke-linejoin='round'/></g></svg>"
       />
+      {/* Safari ignores SVG favicons — PNG fallback + home-screen icon. */}
+      <link rel='icon' type='image/png' sizes='64x64' href='/favicon.png' />
+      <link rel='apple-touch-icon' href='/apple-touch-icon.png' />
       <style dangerouslySetInnerHTML={{ __html: css }} />
     </head>
     <body>
