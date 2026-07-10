@@ -71,4 +71,4 @@ Run `ax --help`, or `ax agent-context` for the agent-oriented playbook (also ser
 
 ## Built with
 
-[Bun](https://bun.sh) (single-file binary via `bun build --compile`) and [linkedom](https://github.com/WebReflection/linkedom) for standard-DOM parsing. The multi-tool era of ax (json/yaml/text/stats/enc/time subcommands) lives on the [`toolkit`](https://github.com/yusukebe/ax/tree/toolkit) branch.
+[Bun](https://bun.sh) (single-file binary via `bun build --compile`) and [linkedom](https://github.com/WebReflection/linkedom) for standard-DOM parsing — the only runtime dependency.
