@@ -109,3 +109,14 @@ test('0 rows after --where is announced, never silent', () => {
   const r = ax(['zero.html', '.t', '--table', '--where', 'Stars > 100'])
   expect(r.err).toContain('0 of 1 rows match --where')
 })
+
+test('JS-shell SPA is diagnosed, not silent', () => {
+  writeFileSync(
+    join(dir, 'spa.html'),
+    '<html><head><script src="/a.js"></script></head><body><div id="root"></div></body></html>'
+  )
+  const outline = ax(['spa.html', '--outline'])
+  expect(outline.err).toContain('likely a JS-rendered SPA')
+  const sel = ax(['spa.html', '.item'])
+  expect(sel.err).toContain('likely a JS-rendered SPA')
+})

@@ -291,11 +291,25 @@ export async function root(argv: string[]) {
   // --- parse mode ---
   const { document } = parseHTML(await readSource(src))
   const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
+
+  // JS-shell diagnosis: a 200 with an SPA husk is the sneakiest "success".
+  const spaNote = (): string | null => {
+    const body = document.querySelector('body')
+    const text = collapse(body?.textContent ?? '')
+    const scripts = document.querySelectorAll('script').length
+    if (text.length < 200 && scripts > 0)
+      return `body has ${text.length} chars of visible text and ${scripts} script(s) — likely a JS-rendered SPA; ax reads raw HTML (use a browser tool for this page)`
+    return null
+  }
+
   const scope = (): ParentNode => {
     if (!selector) return document.querySelector('body') ?? document
     const el = document.querySelector(selector)
-    if (!el) fail(`selector matched nothing: ${selector}`)
-    return el
+    if (!el) {
+      const spa = spaNote()
+      fail(`selector matched nothing: ${selector}`, spa ?? undefined)
+    }
+    return el as ParentNode
   }
 
   if (flags.md) {
@@ -313,6 +327,10 @@ export async function root(argv: string[]) {
       .filter(([, n]) => n >= 2)
       .sort((a, b) => b[1] - a[1])
       .map(([sig, n]) => `${String(n).padStart(5)}  ${sig}`)
+    if (lines.length === 0) {
+      const spa = spaNote()
+      process.stderr.write(`ax: note: no repeating structures found${spa ? ` — ${spa}` : ''}\n`)
+    }
     return emitLines(lines, opts)
   }
 
@@ -375,7 +393,7 @@ export async function root(argv: string[]) {
 
   if (!selector) fail('missing selector', 'ax <url|file|-> <selector>  (or --outline / --md)')
   const els = [...document.querySelectorAll(selector)]
-  if (els.length === 0) fail(`selector matched nothing: ${selector}`)
+  if (els.length === 0) fail(`selector matched nothing: ${selector}`, spaNote() ?? undefined)
 
   if (flags.count) return void process.stdout.write(els.length + '\n')
 

@@ -39,5 +39,7 @@ Answer with the data, concisely — no methodology narration.
 - Default cap 50 results; stderr announces anything hidden. `--limit`,
   `--all`, `--budget <tokens>` control it. Rows default to token-cheap TSV; add `--json` if you need JSON.
 - Errors are one stderr line with a hint — fix the flag, not the approach.
+- If ax says "likely a JS-rendered SPA", stop probing selectors — switch to
+  a browser tool; the content is not in the raw HTML.
 - For plain text files and non-web work, use your usual tools — ax is for
   the web.
