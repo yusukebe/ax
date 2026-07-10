@@ -120,3 +120,28 @@ test('JS-shell SPA is diagnosed, not silent', () => {
   const sel = ax(['spa.html', '.item'])
   expect(sel.err).toContain('likely a JS-rendered SPA')
 })
+
+test('--table: colspan/rowspan expansion, multi-row headers, nested tables (#2)', () => {
+  writeFileSync(
+    join(dir, 'span.html'),
+    `<table id="t1"><tr><th>Name</th><th colspan="2">Details</th></tr>
+     <tr><td>Alice</td><td>Age 30</td><td>NYC</td></tr></table>
+     <table id="t2"><tr><th rowspan="2">Country</th><th colspan="2">Cities</th></tr>
+     <tr><th>Capital</th><th>Largest</th></tr>
+     <tr><td>Japan</td><td>Tokyo</td><td>Tokyo</td></tr></table>
+     <table id="t3"><tr><th>Region</th><th>Country</th><th>City</th></tr>
+     <tr><td rowspan="2">Asia</td><td>Japan</td><td>Tokyo</td></tr>
+     <tr><td>Korea</td><td>Seoul</td></tr></table>
+     <table id="t4"><tr><th>A</th><th>B</th></tr>
+     <tr><td>outer1</td><td><table><tr><td>inner1</td><td>inner2</td></tr></table></td></tr></table>`
+  )
+  const t1 = JSON.parse(ax(['span.html', '#t1', '--table', '--json']).out)
+  expect(t1[0]).toEqual({ Name: 'Alice', Details: 'Age 30', Details_2: 'NYC' })
+  const t2 = JSON.parse(ax(['span.html', '#t2', '--table', '--json']).out)
+  expect(t2[0]).toEqual({ Country: 'Japan', Cities: 'Tokyo', Cities_2: 'Tokyo' })
+  const t3 = JSON.parse(ax(['span.html', '#t3', '--table', '--json']).out)
+  expect(t3[1]).toEqual({ Region: 'Asia', Country: 'Korea', City: 'Seoul' })
+  const t4 = JSON.parse(ax(['span.html', '#t4', '--table', '--json']).out)
+  expect(t4).toHaveLength(1)
+  expect(t4[0]).toEqual({ A: 'outer1', B: 'inner1inner2' })
+})

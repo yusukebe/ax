@@ -365,20 +365,50 @@ export async function root(argv: string[]) {
       el.localName === 'table' ? [el] : [...el.querySelectorAll('table')]
     )
     if (targets.length === 0) fail(`no <table> found${selector ? ` under: ${selector}` : ''}`)
+    // Grid construction per the HTML table model: expand colspan/rowspan,
+    // ignore rows of nested tables, consume leading all-<th> rows as header.
     const parse = (table: Element) => {
-      const allRows = [...table.querySelectorAll('tr')]
+      const allRows = [...table.querySelectorAll('tr')].filter(
+        (tr) => tr.closest('table') === table
+      )
       if (allRows.length === 0) return { headers: [], rows: [] as Record<string, string | null>[] }
-      const headerCells = [...(allRows[0]?.querySelectorAll('th') ?? [])]
-      const hasHeader = headerCells.length > 0
-      const headers = hasHeader
-        ? headerCells.map((c, i) => collapse(c.textContent ?? '') || `col${i}`)
-        : [...(allRows[0]?.querySelectorAll('td') ?? [])].map((_c, i) => `col${i}`)
-      const dataRows = hasHeader ? allRows.slice(1) : allRows
-      const rows = dataRows
-        .map((tr) => {
-          const cells = [...tr.querySelectorAll('th, td')].map((c) => collapse(c.textContent ?? ''))
-          return Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? null]))
-        })
+      const cellsOf = (tr: Element) =>
+        [...tr.children].filter((c) => c.localName === 'th' || c.localName === 'td')
+      const grid: (string | undefined)[][] = allRows.map(() => [])
+      allRows.forEach((tr, r) => {
+        let c = 0
+        for (const cell of cellsOf(tr)) {
+          while (grid[r]![c] !== undefined) c++
+          const text = collapse(cell.textContent ?? '')
+          const cs = Math.max(1, Number(cell.getAttribute('colspan')) || 1)
+          const rs = Math.max(1, Number(cell.getAttribute('rowspan')) || 1)
+          for (let dr = 0; dr < rs && r + dr < allRows.length; dr++) {
+            for (let dc = 0; dc < cs; dc++) grid[r + dr]![c + dc] = text
+          }
+          c += cs
+        }
+      })
+      let headerRowCount = 0
+      while (
+        headerRowCount < allRows.length &&
+        cellsOf(allRows[headerRowCount]!).every((c) => c.localName === 'th') &&
+        cellsOf(allRows[headerRowCount]!).length > 0
+      ) {
+        headerRowCount++
+      }
+      const width = Math.max(...grid.map((row) => row.length))
+      const named = Array.from({ length: width }, (_, i) =>
+        headerRowCount > 0 ? grid[0]![i] || `col${i}` : `col${i}`
+      )
+      const seen = new Map<string, number>()
+      const headers = named.map((h) => {
+        const n = (seen.get(h) ?? 0) + 1
+        seen.set(h, n)
+        return n === 1 ? h : `${h}_${n}`
+      })
+      const rows = grid
+        .slice(headerRowCount)
+        .map((cells) => Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? null])))
         .filter((r) => Object.values(r).some((v) => v))
       return { headers, rows }
     }

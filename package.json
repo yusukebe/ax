@@ -1,6 +1,6 @@
 {
   "name": "ax",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A scriptless multitool for AI agents — extract from HTML, query JSON, and process text in one line instead of a throwaway python script",
   "license": "MIT",
   "author": "Yusuke Wada <yusuke@kamawada.com>",
