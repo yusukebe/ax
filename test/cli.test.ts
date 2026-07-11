@@ -108,6 +108,21 @@ test('errors: missing selector hint, exit 1 on no match', () => {
   expect(r.err).toContain('matched nothing')
 })
 
+test('errors: bad selector is a clean one-line error, no stack trace', () => {
+  const r = ax(['page.html', ':::bad('])
+  expect(r.code).toBe(1)
+  expect(r.err.split('\n')).toHaveLength(1)
+  expect(r.err).toContain('ax: error: bad selector:')
+  expect(r.err).not.toContain('node_modules')
+})
+
+test('errors: bad --row field selector is a clean one-line error', () => {
+  const r = ax(['page.html', '.card', '--row', 'title=[data-id="1'])
+  expect(r.code).toBe(1)
+  expect(r.err.split('\n')).toHaveLength(1)
+  expect(r.err).toContain('ax: error: bad selector:')
+})
+
 test('unknown flag warns instead of silently ignoring', () => {
   const r = ax(['page.html', '.card', '--raw'])
   expect(r.err).toContain('unknown flag --raw')
