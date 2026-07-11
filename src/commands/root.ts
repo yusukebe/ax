@@ -96,6 +96,25 @@ const KEEP_HEADERS = new Set([
 
 const collapse = (s: string) => s.trim().replace(/\s+/g, ' ')
 
+// User-supplied selectors reach css-what/linkedom, which throw plain Errors
+// (with node_modules stack traces) on malformed CSS — never let those leak
+// past the fail() contract of a structured, single-line stderr message.
+function query1(root: ParentNode, sel: string): Element | null {
+  try {
+    return root.querySelector(sel)
+  } catch (e) {
+    fail(`bad selector: ${sel} (${(e as Error).message})`)
+  }
+}
+
+function queryAll(root: ParentNode, sel: string): Element[] {
+  try {
+    return [...root.querySelectorAll(sel)]
+  } catch (e) {
+    fail(`bad selector: ${sel} (${(e as Error).message})`)
+  }
+}
+
 function signature(el: Element): string {
   const classes = [...el.classList]
   return el.localName + (classes.length ? '.' + classes.join('.') : '')
@@ -407,7 +426,7 @@ export async function root(argv: string[]) {
 
   const scope = (): ParentNode => {
     if (!selector) return document.querySelector('body') ?? document
-    const el = document.querySelector(selector)
+    const el = query1(document, selector)
     if (!el) {
       const spa = spaNote()
       fail(`selector matched nothing: ${selector}`, spa ?? undefined)
@@ -461,7 +480,7 @@ export async function root(argv: string[]) {
   }
 
   if (flags.table) {
-    const tables = [...document.querySelectorAll(selector ?? 'table')].filter(
+    const tables = queryAll(document, selector ?? 'table').filter(
       (el) => el.localName === 'table' || (el.querySelector('table') && el.localName !== 'table')
     )
     const targets = tables.flatMap((el) =>
@@ -525,7 +544,7 @@ export async function root(argv: string[]) {
   }
 
   if (!selector) fail('missing selector', 'ax <url|file|-> <selector>  (or --outline / --md)')
-  const els = [...document.querySelectorAll(selector)]
+  const els = queryAll(document, selector)
   if (els.length === 0) fail(`selector matched nothing: ${selector}`, spaNote() ?? undefined)
 
   if (flags.count) return void process.stdout.write(els.length + '\n')
@@ -535,7 +554,7 @@ export async function root(argv: string[]) {
     const rows = els.map((el) => {
       const obj: Record<string, string | null> = {}
       for (const f of fields) {
-        const target = f.sel === '' ? el : el.querySelector(f.sel)
+        const target = f.sel === '' ? el : query1(el, f.sel)
         if (!target) obj[f.name] = null
         else if (f.attr) obj[f.name] = target.getAttribute(f.attr)
         else obj[f.name] = collapse(target.textContent ?? '')
