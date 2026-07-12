@@ -1,3 +1,4 @@
+import { rename } from 'node:fs/promises'
 import { parseHTML } from 'linkedom'
 import { parseArgs, num } from '../lib/args'
 import {
@@ -363,9 +364,13 @@ export async function root(argv: string[]) {
         )
         exitPerFail()
       }
-      // Stream to disk — never buffer a download in memory. A failed or
-      // timed-out transfer must not leave a partial file behind.
-      const sink = Bun.file(flags.output).writer()
+      // Stream to a temp file next to the target, then atomically rename.
+      // FileSink does not truncate an existing file (a shorter download used
+      // to leave the old file's tail spliced onto the new bytes), and the
+      // rename means a failed or timed-out transfer leaves whatever sat at
+      // -o before completely untouched — no partials, no franken-files.
+      const tmpOut = `${flags.output}.axtmp-${process.pid}`
+      const sink = Bun.file(tmpOut).writer()
       let written = 0
       try {
         const reader = res.body?.getReader()
@@ -378,13 +383,16 @@ export async function root(argv: string[]) {
           }
         }
         await sink.end()
+        await rename(tmpOut, flags.output)
       } catch (e) {
         await Promise.resolve(sink.end()).catch(() => {})
-        await Bun.file(flags.output)
+        await Bun.file(tmpOut)
           .delete()
           .catch(() => {})
         timeoutError(e, guards.timeoutMs)
-        return fail(`download failed: ${(e as Error).message} (partial file removed)`)
+        return fail(
+          `download failed: ${(e as Error).message} (existing file at ${flags.output} untouched)`
+        )
       }
       process.stdout.write(
         JSON.stringify(
