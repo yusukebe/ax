@@ -352,13 +352,16 @@ test('charset: a BOM beats a lying Content-Type charset', async () => {
   expect(r.out).toBe('こんにちは世界')
 })
 
-// Canary: windows-1251 is a real-world encoding Bun's TextDecoder currently
-// lacks (checked in Bun 1.3.14). If this test starts failing on a Bun upgrade,
-// support probably arrived — flip the expectation to a correct decode.
-test('charset: encoding Bun lacks (windows-1251) degrades to UTF-8 with a note', async () => {
+// This was the #20 canary: on Bun 1.3.14 TextDecoder lacked windows-1251 and
+// the test asserted the UTF-8 fallback + stderr note. Bun 1.4.0 added the
+// encoding, the canary fired as designed, and the expectation flipped to a
+// correct decode. (The graceful-fallback path itself is still covered by the
+// bogus-charset test above.)
+test('charset: windows-1251 decodes correctly (Bun >= 1.4.0)', async () => {
   const r = await ax([`http://localhost:${server.port}/cp1251`])
   const rep = JSON.parse(r.out)
   expect(rep.ok).toBe(true)
+  expect(rep.body).toContain('Привет')
   expect(rep.body).toContain('still-readable')
-  expect(r.err).toContain('unknown charset "windows-1251"')
+  expect(r.err).not.toContain('unknown charset')
 })
