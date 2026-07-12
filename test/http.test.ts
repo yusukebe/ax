@@ -352,18 +352,31 @@ test('charset: a BOM beats a lying Content-Type charset', async () => {
   expect(r.out).toBe('こんにちは世界')
 })
 
-// This was the #20 canary: on Bun 1.3.14 TextDecoder lacked windows-1251 and
-// the test asserted the UTF-8 fallback + stderr note. Bun 1.4.0 added the
-// encoding, the canary fired as designed, and the expectation flipped to a
-// correct decode. (The graceful-fallback path itself is still covered by the
-// bogus-charset test above.)
-test('charset: windows-1251 decodes correctly (Bun >= 1.4.0)', async () => {
+// The #20 canary fired on Bun 1.4.0 (TextDecoder gained windows-1251), but
+// 1.4.0's release assets aren't published for CI yet — so this asserts per
+// the running runtime's actual capability: native decode where supported,
+// the announced UTF-8 fallback where not. Both branches stay exercised as
+// long as CI (1.3.14) and dev machines (1.4.0) differ.
+const HAS_CP1251 = (() => {
+  try {
+    new TextDecoder('windows-1251')
+    return true
+  } catch {
+    return false
+  }
+})()
+
+test('charset: windows-1251 — native decode when supported, else fallback + note', async () => {
   const r = await ax([`http://localhost:${server.port}/cp1251`])
   const rep = JSON.parse(r.out)
   expect(rep.ok).toBe(true)
-  expect(rep.body).toContain('Привет')
   expect(rep.body).toContain('still-readable')
-  expect(r.err).not.toContain('unknown charset')
+  if (HAS_CP1251) {
+    expect(rep.body).toContain('Привет')
+    expect(r.err).not.toContain('unknown charset')
+  } else {
+    expect(r.err).toContain('unknown charset "windows-1251"')
+  }
 })
 
 test('-o: a shorter download fully replaces a longer existing file (truncate regression)', async () => {
