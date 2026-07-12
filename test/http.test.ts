@@ -362,3 +362,21 @@ test('charset: encoding Bun lacks (windows-1251) degrades to UTF-8 with a note',
   expect(rep.body).toContain('still-readable')
   expect(r.err).toContain('unknown charset "windows-1251"')
 })
+
+test('-o: a shorter download fully replaces a longer existing file (truncate regression)', async () => {
+  const out = join(dataDir, 'artifact.bin')
+  await Bun.file(out).write('THIS-IS-A-MUCH-LONGER-PREVIOUS-CONTENT')
+  const r = await ax([`http://localhost:${server.port}/echo`, '-o', out])
+  expect(r.code).toBe(0)
+  expect(await Bun.file(out).text()).toBe('GET:')
+})
+
+test('-o: a failed download leaves the existing file untouched, no tmp debris', async () => {
+  const out = join(dataDir, 'precious.bin')
+  await Bun.file(out).write('PRECIOUS')
+  const r = await ax([`http://localhost:${server.port}/stall`, '-o', out, '-m', '1'])
+  expect(r.code).toBe(1)
+  expect(await Bun.file(out).text()).toBe('PRECIOUS')
+  const { readdirSync } = await import('node:fs')
+  expect(readdirSync(dataDir).filter((n) => n.includes('.axtmp-'))).toEqual([])
+}, 15000)
