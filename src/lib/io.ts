@@ -142,6 +142,52 @@ export function timeoutError(e: unknown, timeoutMs: number): never | null {
   return null
 }
 
+// Decide a response body's text encoding the way a browser would (simplified):
+// a byte-order mark beats everything (even the header), then the Content-Type
+// charset, then a <meta charset> sniffed from the first 1KB, else UTF-8.
+// Label normalization/aliasing is left to TextDecoder itself.
+export function decodeBody(bytes: Uint8Array, contentType: string | null): string {
+  const label = bomLabel(bytes) ?? headerCharset(contentType) ?? metaCharset(bytes) ?? 'utf-8'
+  try {
+    return new TextDecoder(label).decode(bytes)
+  } catch (e) {
+    if (!(e instanceof RangeError)) throw e
+    // Unknown/unsupported label — never crash a fetch over a bad charset claim.
+    process.stderr.write(`ax: note: unknown charset "${label}", decoding as UTF-8\n`)
+    return new TextDecoder().decode(bytes)
+  }
+}
+
+function bomLabel(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return 'utf-8'
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return 'utf-16le'
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be'
+  return null
+}
+
+function headerCharset(contentType: string | null): string | null {
+  const m = contentType ? /charset=("?)([^;"\s]+)\1/i.exec(contentType) : null
+  return m?.[2] ?? null
+}
+
+// Meta tags are ASCII regardless of the page's real encoding, so a latin1
+// (byte-for-codepoint) decode of the first 1KB is enough to find them without
+// knowing the charset yet.
+function metaCharset(bytes: Uint8Array): string | null {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 1024))
+  const direct = /<meta\b[^>]*\bcharset\s*=\s*["']?([^"'\s/>;]+)/i.exec(head)
+  const httpEquiv =
+    /<meta\b[^>]*\bhttp-equiv\s*=\s*["']?content-type["']?[^>]*\bcontent\s*=\s*["'][^"']*charset=([^"'\s;]+)/i.exec(
+      head
+    )
+  const label = direct?.[1] ?? httpEquiv?.[1]
+  if (!label) return null
+  // WHATWG sniffing treats a meta-declared UTF-16 as bogus (such a document
+  // couldn't have valid ASCII meta tags to sniff in the first place) and
+  // coerces it to UTF-8.
+  return /^utf-16/i.test(label) ? 'utf-8' : label
+}
+
 // Read a source that is a URL, a file path, or "-" (stdin).
 export async function readSource(src: string | undefined, guards?: FetchGuards): Promise<string> {
   if (src === undefined || src === '-') {
@@ -180,7 +226,7 @@ export async function readSource(src: string | undefined, guards?: FetchGuards):
         `--max-bytes <n> raises the download cap`
       )
     }
-    const text = new TextDecoder().decode(body.bytes)
+    const text = decodeBody(body.bytes, res.headers.get('content-type'))
     // Only complete bodies are cached — a capped or aborted read must never
     // be served later as if it were the real page. Servers that say
     // no-store, credential-bearing URLs, and --no-cache all skip the disk.

@@ -4,6 +4,53 @@ import { join } from 'node:path'
 const ENTRY = join(import.meta.dir, '..', 'src', 'index.ts')
 let server: ReturnType<typeof Bun.serve>
 
+// Shift_JIS bytes for "こんにちは世界" — can't be produced with TextEncoder
+// (UTF-8 only), so the raw bytes are spelled out here.
+const SJIS_KONNICHIWA = new Uint8Array([
+  0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd, 0x90, 0xa2, 0x8a, 0x45,
+])
+const ascii = (s: string) => Uint8Array.from(s.split('').map((c) => c.charCodeAt(0)))
+const concatBytes = (parts: Uint8Array[]) => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0))
+  let off = 0
+  for (const p of parts) {
+    out.set(p, off)
+    off += p.length
+  }
+  return out
+}
+const SJIS_HEADER_BODY = concatBytes([
+  ascii('<html><head></head><body><p class="msg">'),
+  SJIS_KONNICHIWA,
+  ascii('</p></body></html>'),
+])
+const SJIS_META_BODY = concatBytes([
+  ascii('<html><head><meta charset="shift_jis"></head><body><p class="msg">'),
+  SJIS_KONNICHIWA,
+  ascii('</p></body></html>'),
+])
+const BAD_CHARSET_BODY = ascii('<html><head></head><body><p class="msg">hello</p></body></html>')
+// "café €" in windows-1252: 0xE9 = é, 0x80 = € (a C1 control in real ISO-8859-1 —
+// the byte that proves the WHATWG iso-8859-1 → windows-1252 alias was applied).
+const LATIN1_BODY = concatBytes([
+  ascii('<html><head></head><body><p class="msg">caf'),
+  Uint8Array.of(0xe9, 0x20, 0x80),
+  ascii('</p></body></html>'),
+])
+// UTF-8 body with a BOM, served under a header that lies about the charset.
+const BOM_BODY = concatBytes([
+  Uint8Array.of(0xef, 0xbb, 0xbf),
+  new TextEncoder().encode(
+    '<html><head></head><body><p class="msg">こんにちは世界</p></body></html>'
+  ),
+])
+// "Привет" in windows-1251 — an encoding Bun's TextDecoder does not implement.
+const CP1251_BODY = concatBytes([
+  ascii('<html><head></head><body><p class="msg">'),
+  Uint8Array.of(0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2),
+  ascii('</p><p class="ok">still-readable</p></body></html>'),
+])
+
 // Async spawn: spawnSync would block the event loop that Bun.serve needs to
 // answer the child's request — a deadlock.
 async function ax(args: string[]) {
@@ -41,6 +88,28 @@ beforeAll(() => {
           })
         )
       }
+      if (url.pathname === '/sjis-header')
+        return new Response(SJIS_HEADER_BODY, {
+          headers: { 'content-type': 'text/html; charset=Shift_JIS' },
+        })
+      if (url.pathname === '/sjis-meta')
+        return new Response(SJIS_META_BODY, { headers: { 'content-type': 'text/html' } })
+      if (url.pathname === '/bad-charset')
+        return new Response(BAD_CHARSET_BODY, {
+          headers: { 'content-type': 'text/html; charset=bogus' },
+        })
+      if (url.pathname === '/latin1')
+        return new Response(LATIN1_BODY, {
+          headers: { 'content-type': 'text/html; charset=iso-8859-1' },
+        })
+      if (url.pathname === '/bom-vs-header')
+        return new Response(BOM_BODY, {
+          headers: { 'content-type': 'text/html; charset=shift_jis' },
+        })
+      if (url.pathname === '/cp1251')
+        return new Response(CP1251_BODY, {
+          headers: { 'content-type': 'text/html; charset=windows-1251' },
+        })
       if (url.pathname === '/stall') {
         // Sends one chunk, then never finishes.
         return new Response(
@@ -169,4 +238,45 @@ test('--body: body only on stdout, uncapped, notes on stderr', async () => {
   expect(empty.err).toContain('empty body')
   const failed = await ax([`http://localhost:${server.port}/nope`, '--body', '-f'])
   expect(failed.code).toBe(22)
+})
+
+test('charset: Content-Type charset decodes Shift_JIS (fetch and parse mode)', async () => {
+  const url = `http://localhost:${server.port}/sjis-header`
+  const fetchRep = JSON.parse((await ax([url])).out)
+  expect(fetchRep.body).toContain('こんにちは世界')
+  const parsed = await ax([url, '.msg', '--fresh'])
+  expect(parsed.out).toBe('こんにちは世界')
+})
+
+test('charset: <meta charset> is sniffed when the header has none', async () => {
+  const r = await ax([`http://localhost:${server.port}/sjis-meta`, '.msg', '--fresh'])
+  expect(r.out).toBe('こんにちは世界')
+})
+
+test('charset: unknown label falls back to UTF-8 with a stderr note', async () => {
+  const r = await ax([`http://localhost:${server.port}/bad-charset`])
+  const rep = JSON.parse(r.out)
+  expect(rep.body).toContain('hello')
+  expect(r.err).toContain('unknown charset "bogus"')
+})
+
+test('charset: iso-8859-1 is decoded as windows-1252 (WHATWG alias)', async () => {
+  const r = await ax([`http://localhost:${server.port}/latin1`, '.msg', '--fresh'])
+  expect(r.out).toBe('café €')
+})
+
+test('charset: a BOM beats a lying Content-Type charset', async () => {
+  const r = await ax([`http://localhost:${server.port}/bom-vs-header`, '.msg', '--fresh'])
+  expect(r.out).toBe('こんにちは世界')
+})
+
+// Canary: windows-1251 is a real-world encoding Bun's TextDecoder currently
+// lacks (checked in Bun 1.3.14). If this test starts failing on a Bun upgrade,
+// support probably arrived — flip the expectation to a correct decode.
+test('charset: encoding Bun lacks (windows-1251) degrades to UTF-8 with a note', async () => {
+  const r = await ax([`http://localhost:${server.port}/cp1251`])
+  const rep = JSON.parse(r.out)
+  expect(rep.ok).toBe(true)
+  expect(rep.body).toContain('still-readable')
+  expect(r.err).toContain('unknown charset "windows-1251"')
 })

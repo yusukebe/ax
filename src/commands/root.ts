@@ -7,6 +7,7 @@ import {
   readBodyCapped,
   readWithDeadline,
   timeoutError,
+  decodeBody,
   type CappedBody,
 } from '../lib/io'
 import { emitLines, emitJson } from '../lib/emit'
@@ -339,7 +340,7 @@ export async function root(argv: string[]) {
       timeoutError(e, guards.timeoutMs)
       return fail(`read failed: ${(e as Error).message}`)
     }
-    const raw = new TextDecoder().decode(capped.bytes)
+    const raw = decodeBody(capped.bytes, res.headers.get('content-type'))
     // --body: the classic Unix pipe mode — body only on stdout, no display
     // cap (downloads are still bounded by --max-bytes). Anything unusual is
     // announced on stderr so the pipe never lies by omission.
