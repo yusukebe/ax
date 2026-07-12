@@ -23,7 +23,8 @@ fetch (no selector — curl parity, but never silent):
   ax https://api.example.com/users        {status, ok, ms, headers, body}
   -X, --method <m>   -H, --header <k: v>   -d, --data <body|@file|@->
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
-  -f (HTTP errors -> exit 22, report still printed)
+  -f (HTTP errors -> exit 22, report still printed; with -o the error body
+      is never saved and the file at -o keeps whatever it had before)
   --data-raw <literal> (never reads @ as a file)  --data-binary <body|@file>
   (-d strips CR/LF from @file contents, curl-style; --data-binary keeps them)
   -L -i -s -S --compressed are accepted no-ops
@@ -339,7 +340,29 @@ export async function root(argv: string[]) {
       return fail(`request failed: ${(e as Error).message}`, `is the server running at ${src}?`)
     }
     const ms = Math.round(performance.now() - started)
+    // curl parity: -f turns HTTP errors into a failing exit code (curl uses
+    // 22). Unlike curl we still print the full report — the agent needs the
+    // status and body to act, never-silent applies to failures most of all.
+    const exitPerFail = (): never => {
+      if (flags.fail === true && !res.ok) {
+        process.stderr.write(`ax: -f: HTTP ${res.status} -> exit 22\n`)
+        process.exit(22)
+      }
+      process.exit(0)
+    }
     if (typeof flags.output === 'string') {
+      // curl parity again: -f never saves the error document — whatever sat
+      // at the -o path before stays untouched.
+      if (flags.fail === true && !res.ok) {
+        process.stdout.write(
+          JSON.stringify(
+            { status: res.status, ok: false, ms, saved: null, note: '-f: error body not saved' },
+            null,
+            2
+          ) + '\n'
+        )
+        exitPerFail()
+      }
       // Stream to disk — never buffer a download in memory. A failed or
       // timed-out transfer must not leave a partial file behind.
       const sink = Bun.file(flags.output).writer()
@@ -392,7 +415,7 @@ export async function root(argv: string[]) {
           `ax: note: download stopped at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap)\n`
         )
       }
-      process.exit(flags.fail === true && !res.ok ? 22 : 0)
+      exitPerFail()
     }
     const budgetTokens = flags.all === true ? Infinity : opts.budget > 0 ? opts.budget : 500
     const maxChars = budgetTokens * 4
@@ -440,14 +463,7 @@ export async function root(argv: string[]) {
         2
       ) + '\n'
     )
-    // curl parity: -f turns HTTP errors into a failing exit code (curl uses
-    // 22). Unlike curl we still print the full report — the agent needs the
-    // status and body to act, never-silent applies to failures most of all.
-    if (flags.fail === true && !res.ok) {
-      process.stderr.write(`ax: -f: HTTP ${res.status} -> exit 22\n`)
-      process.exit(22)
-    }
-    process.exit(0)
+    exitPerFail()
   }
 
   // --- parse mode ---

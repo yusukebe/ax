@@ -10,7 +10,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
 
     ax https://api.site.example/users [-X POST] [-H 'k: v'] [-d body|@file]
       curl reflexes work: -u user:pass, -I (HEAD), -o file, -k, -m secs,
-      -f (HTTP error -> exit 22, report still printed);
+      -f (HTTP error -> exit 22, report still printed; with -o the error
+        body is never saved — the file keeps whatever it had before);
       --data-raw is literal (@ isn't a file ref), --data-binary keeps \n
       -L/-i/-s/-S/--compressed are accepted no-ops
       --body prints the body only, uncapped (status notes move to stderr)

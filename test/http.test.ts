@@ -290,6 +290,24 @@ test('curl reflexes: -f exits 22 on HTTP errors but still prints the report', as
   expect(good.code).toBe(0)
 })
 
+test('curl reflexes: -f with -o exits 22 and never saves the error body', async () => {
+  const out = `${process.env.TMPDIR ?? '/tmp'}/ax-f-o-test.txt`
+  // a previous good download must survive a later -f failure untouched
+  await Bun.write(out, 'GOOD')
+  const bad = await ax([`http://localhost:${server.port}/nope`, '-f', '-o', out])
+  expect(bad.code).toBe(22)
+  const rep = JSON.parse(bad.out)
+  expect(rep.status).toBe(404)
+  expect(rep.saved).toBe(null)
+  expect(bad.err).toContain('exit 22')
+  expect(await Bun.file(out).text()).toBe('GOOD')
+  const good = await ax([`http://localhost:${server.port}/json`, '-f', '-o', out])
+  expect(good.code).toBe(0)
+  expect(JSON.parse(good.out).saved).toBe(out)
+  expect(await Bun.file(out).text()).toContain('users')
+  await Bun.file(out).delete()
+})
+
 test('--body: body only on stdout, uncapped, notes on stderr', async () => {
   const big = await ax([`http://localhost:${server.port}/big`, '--body'])
   expect(big.out.length).toBe(10000) // no display cap in body mode
