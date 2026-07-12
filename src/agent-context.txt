@@ -8,9 +8,10 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
 
 ## Fetch (no selector — curl parity, never silent)
 
-    ax https://api.site.example/users [-X POST] [-H 'k: v'] [-d body]
+    ax https://api.site.example/users [-X POST] [-H 'k: v'] [-d body|@file]
       curl reflexes work: -u user:pass, -I (HEAD), -o file, -k, -m secs,
-      -f (HTTP error -> exit 22, report still printed), --data-raw;
+      -f (HTTP error -> exit 22, report still printed);
+      --data-raw is literal (@ isn't a file ref), --data-binary keeps \n
       -L/-i/-s/-S/--compressed are accepted no-ops
       --body prints the body only, uncapped (status notes move to stderr)
     → {status, ok, ms, headers, body}. Empty bodies and error statuses still

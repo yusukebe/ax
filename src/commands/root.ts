@@ -21,9 +21,11 @@ usage:
 
 fetch (no selector — curl parity, but never silent):
   ax https://api.example.com/users        {status, ok, ms, headers, body}
-  -X, --method <m>   -H, --header <k: v>   -d, --data <body>
+  -X, --method <m>   -H, --header <k: v>   -d, --data <body|@file|@->
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
-  -f (HTTP errors -> exit 22, report still printed)  --data-raw/--data-binary
+  -f (HTTP errors -> exit 22, report still printed)
+  --data-raw <literal> (never reads @ as a file)  --data-binary <body|@file>
+  (-d strips CR/LF from @file contents, curl-style; --data-binary keeps them)
   -L -i -s -S --compressed are accepted no-ops
   --body             body only on stdout, uncapped (notes on stderr; for pipes)
   JSON bodies are parsed; fetch mode never caches — every request is live
@@ -203,6 +205,45 @@ function toMarkdown(root: Element): string {
   return out.join('\n\n')
 }
 
+// curl semantics for the data flags: -d/--data and --data-binary treat a
+// leading @ as "read this file" (@- means stdin); --data-raw never does —
+// that's its entire reason to exist. -d additionally strips CR/LF from file
+// contents (curl's documented --data behavior); --data-binary preserves them.
+async function readDataFile(ref: string): Promise<string> {
+  if (ref === '-') return await Bun.stdin.text()
+  if (ref === '') {
+    fail(`couldn't read data from file ""`, '--data-raw sends the literal string')
+  }
+  const file = Bun.file(ref)
+  if (!(await file.exists())) {
+    fail(`couldn't read data from file "${ref}"`, '--data-raw sends the literal string')
+  }
+  try {
+    return await file.text()
+  } catch (e) {
+    fail(
+      `couldn't read data from file "${ref}": ${(e as Error).message}`,
+      '--data-raw sends the literal string'
+    )
+  }
+}
+
+async function readDataArg(value: string, stripNewlines: boolean): Promise<string> {
+  if (!value.startsWith('@')) return value
+  const text = await readDataFile(value.slice(1))
+  return stripNewlines ? text.replace(/[\r\n]/g, '') : text
+}
+
+// -d wins over --data-raw wins over --data-binary when more than one is
+// given, matching the precedence of the old .find([data, raw, binary]).
+async function resolveData(flags: Record<string, unknown>): Promise<string | undefined> {
+  if (typeof flags.data === 'string') return await readDataArg(flags.data, true)
+  if (typeof flags['data-raw'] === 'string') return flags['data-raw']
+  if (typeof flags['data-binary'] === 'string')
+    return await readDataArg(flags['data-binary'], false)
+  return undefined
+}
+
 export async function root(argv: string[]) {
   const { _, flags } = parseArgs(argv, {
     help: { type: 'boolean' },
@@ -272,9 +313,7 @@ export async function root(argv: string[]) {
     if (typeof flags.user === 'string') {
       headers['authorization'] = 'Basic ' + Buffer.from(flags.user).toString('base64')
     }
-    const data = [flags.data, flags['data-raw'], flags['data-binary']].find(
-      (d): d is string => typeof d === 'string'
-    )
+    const data = await resolveData(flags)
     const method =
       typeof flags.method === 'string'
         ? flags.method.toUpperCase()

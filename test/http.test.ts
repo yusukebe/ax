@@ -1,8 +1,11 @@
 import { test, expect, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 
 const ENTRY = join(import.meta.dir, '..', 'src', 'index.ts')
 let server: ReturnType<typeof Bun.serve>
+let dataDir: string
 
 // Shift_JIS bytes for "こんにちは世界" — can't be produced with TextEncoder
 // (UTF-8 only), so the raw bytes are spelled out here.
@@ -53,8 +56,12 @@ const CP1251_BODY = concatBytes([
 
 // Async spawn: spawnSync would block the event loop that Bun.serve needs to
 // answer the child's request — a deadlock.
-async function ax(args: string[]) {
-  const proc = Bun.spawn(['bun', ENTRY, ...args], { stdout: 'pipe', stderr: 'pipe' })
+async function ax(args: string[], stdin?: string) {
+  const proc = Bun.spawn(['bun', ENTRY, ...args], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    ...(stdin === undefined ? {} : { stdin: new TextEncoder().encode(stdin) }),
+  })
   const [out, err] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -127,6 +134,14 @@ beforeAll(() => {
 
 afterAll(() => server.stop(true))
 
+beforeAll(async () => {
+  dataDir = await mkdtemp(join(tmpdir(), 'ax-data-'))
+  // CRLF in the source file — proves -d strips it while --data-binary keeps it.
+  await Bun.file(join(dataDir, 'payload.json')).write('{"a":1}\r\n')
+})
+
+afterAll(() => rm(dataDir, { recursive: true, force: true }))
+
 test('http: JSON body is parsed and pipeable', async () => {
   const r = await ax([`http://localhost:${server.port}/json`])
   const rep = JSON.parse(r.out)
@@ -158,6 +173,55 @@ test('http: --budget truncates with an explicit note', async () => {
 test('http: -d implies POST and sends the body', async () => {
   const rep = JSON.parse((await ax([`http://localhost:${server.port}/echo`, '-d', 'hi'])).out)
   expect(rep.body).toBe('POST:hi')
+})
+
+test('http: -d @file sends file contents with CR/LF stripped', async () => {
+  const file = join(dataDir, 'payload.json')
+  const rep = JSON.parse((await ax([`http://localhost:${server.port}/echo`, '-d', `@${file}`])).out)
+  expect(rep.body).toBe('POST:{"a":1}')
+})
+
+test('http: --data-binary @file preserves newlines', async () => {
+  const file = join(dataDir, 'payload.json')
+  const rep = JSON.parse(
+    (await ax([`http://localhost:${server.port}/echo`, '--data-binary', `@${file}`])).out
+  )
+  expect(rep.body).toBe('POST:{"a":1}\r\n')
+})
+
+test('http: --data-raw never reads @ as a file — not even one that exists', async () => {
+  const url = `http://localhost:${server.port}/echo`
+  // The real differentiator: the file exists, and the path must still be
+  // sent verbatim. A "read it if it exists" misimplementation passes the
+  // missing-file case but fails here.
+  const file = join(dataDir, 'payload.json')
+  const existing = JSON.parse((await ax([url, '--data-raw', `@${file}`])).out)
+  expect(existing.body).toBe(`POST:@${file}`)
+  // And a missing file must be sent literally too, not turned into an error.
+  const missing = JSON.parse((await ax([url, '--data-raw', '@literal'])).out)
+  expect(missing.body).toBe('POST:@literal')
+})
+
+test('http: inline -d keeps its newlines — stripping is for @file contents only', async () => {
+  const rep = JSON.parse(
+    (await ax([`http://localhost:${server.port}/echo`, '-d', 'line1\nline2'])).out
+  )
+  expect(rep.body).toBe('POST:line1\nline2')
+})
+
+test('http: @- reads stdin (-d strips CR/LF, --data-binary preserves)', async () => {
+  const url = `http://localhost:${server.port}/echo`
+  const stripped = JSON.parse((await ax([url, '-d', '@-'], 'l1\r\nl2\n')).out)
+  expect(stripped.body).toBe('POST:l1l2')
+  const kept = JSON.parse((await ax([url, '--data-binary', '@-'], 'l1\r\nl2\n')).out)
+  expect(kept.body).toBe('POST:l1\r\nl2\n')
+})
+
+test('http: -d @missing-file fails with a structured error and hint', async () => {
+  const r = await ax([`http://localhost:${server.port}/echo`, '-d', '@no-such-file-here'])
+  expect(r.code).toBe(1)
+  expect(r.err).toContain(`couldn't read data from file`)
+  expect(r.err).toContain('--data-raw sends the literal string')
 })
 
 test('http: connection refused is a structured error with a hint', async () => {
