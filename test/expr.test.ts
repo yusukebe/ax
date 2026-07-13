@@ -32,6 +32,12 @@ test('regex match', () => {
   expect(compileWhere('name !~ /Weather/')(row)).toBe(true)
 })
 
+test('global regex state does not leak between rows', () => {
+  const rows = [{ name: 'foo' }, { name: 'foo' }]
+  expect(rows.filter(compileWhere('name ~ /foo/g'))).toEqual(rows)
+  expect(rows.filter(compileWhere('name !~ /foo/g'))).toEqual([])
+})
+
 test('dot paths and .length', () => {
   expect(compileWhere('nested.x == 1')(row)).toBe(true)
   expect(compileWhere('tags.length >= 2')(row)).toBe(true)

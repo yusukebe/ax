@@ -175,6 +175,11 @@ function resolve(path: string[], ctx: unknown): unknown {
   return v
 }
 
+function testRegex(regex: RegExp, value: unknown): boolean {
+  regex.lastIndex = 0
+  return regex.test(String(value ?? ''))
+}
+
 function evalNode(n: Node, ctx: unknown): unknown {
   switch (n.k) {
     case 'lit':
@@ -199,13 +204,9 @@ function evalNode(n: Node, ctx: unknown): unknown {
         case '!=':
           return l !== r && ln !== rn
         case '~':
-          return r instanceof RegExp
-            ? r.test(String(l ?? ''))
-            : fail('~ needs a /regex/ on the right')
+          return r instanceof RegExp ? testRegex(r, l) : fail('~ needs a /regex/ on the right')
         case '!~':
-          return r instanceof RegExp
-            ? !r.test(String(l ?? ''))
-            : fail('!~ needs a /regex/ on the right')
+          return r instanceof RegExp ? !testRegex(r, l) : fail('!~ needs a /regex/ on the right')
         case '>':
           return (ln as number) > (rn as number)
         case '>=':
