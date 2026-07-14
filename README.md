@@ -30,6 +30,24 @@ curl -fsSL https://ax.yusuke.run/install | sh
 
 Teach your agent: `npx skills add yusukebe/ax` — or have it run `ax agent-context`.
 
+## Nix
+
+The project provides optional Nix flake outputs for users who already use Nix.
+The flake wraps the prebuilt release binary.
+
+```bash
+# Run without installing
+nix run github:yusukebe/ax
+
+# Install into your profile
+nix profile install github:yusukebe/ax
+```
+
+The flake tracks the default branch; `version` and the per-platform SRI hashes in
+`flake.nix` are bumped at release time. (Release tags are cut before the bump lands,
+so `github:yusukebe/ax/vX.Y.Z` is not a valid pin — use a specific commit SHA if
+you need reproducibility.)
+
 ## Why not htmlq / curl / Firecrawl?
 
 **htmlq is a selector; ax is the loop.** htmlq covers one step (CSS selector → text) and can't fetch, so every use marries it to curl. Multi-field extraction means running it N times and zipping by hand — exactly the moment agents give up and write python. ax does fetch + discovery + structured rows + tables + filtering in one binary, with agent-shaped output.
