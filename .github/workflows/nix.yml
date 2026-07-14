@@ -28,6 +28,10 @@ on:
       - 'flake.lock'
       - '**/*.nix'
       - '.github/workflows/nix.yml'
+  # The release workflow's flake bump is committed with GITHUB_TOKEN, which
+  # never triggers push workflows — so the release job dispatches this one
+  # explicitly to validate the bumped flake with a real nix.
+  workflow_dispatch:
 
 permissions:
   contents: read

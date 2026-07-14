@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write # dispatch nix.yml to validate the flake bump
 
 jobs:
   release:
@@ -78,3 +79,10 @@ jobs:
           # commit. If main moved between tag and here, fail loudly rather
           # than force anything — rerun the step after a rebase.
           git push origin HEAD:main
+
+      - name: Validate the bumped flake
+        # The bump commit was made with GITHUB_TOKEN and cannot trigger push
+        # workflows; an explicit dispatch can.
+        run: gh workflow run nix.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}
