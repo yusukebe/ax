@@ -66,3 +66,15 @@ jobs:
           git add Formula/ax.rb
           git commit -m "ax ${GITHUB_REF_NAME#v}"
           git push
+
+      - name: Update Nix flake
+        run: |
+          bun scripts/flake-update.ts "${GITHUB_REF_NAME#v}" dist/checksums.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add flake.nix
+          git commit -m "chore(nix): bump flake to ${GITHUB_REF_NAME}"
+          # The tag points at main's tip, so this fast-forwards main by one
+          # commit. If main moved between tag and here, fail loudly rather
+          # than force anything — rerun the step after a rebase.
+          git push origin HEAD:main

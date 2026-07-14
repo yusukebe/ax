@@ -546,6 +546,10 @@ ax url --md --budget 800   # docs as markdown`}</pre>
             <code>brew install yusukebe/tap/ax</code>
           </li>
           <li>
+            <span class='t'>nix</span>
+            <code>nix run github:yusukebe/ax</code>
+          </li>
+          <li>
             <span class='t'>source</span>
             <code>
               git clone https://github.com/yusukebe/ax && cd ax && bun install && bun run build
