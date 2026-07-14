@@ -115,7 +115,7 @@ export async function readBodyCapped(
     const { done, value } = await readWithDeadline(reader, deadline)
     if (done || !value) break
     const room = maxBytes - total
-    if (value.byteLength >= room) {
+    if (value.byteLength > room) {
       chunks.push(value.subarray(0, room))
       total = maxBytes
       capped = true

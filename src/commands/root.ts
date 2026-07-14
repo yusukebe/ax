@@ -211,8 +211,10 @@ function toMarkdown(root: Element): string {
 // leading @ as "read this file" (@- means stdin); --data-raw never does —
 // that's its entire reason to exist. -d additionally strips CR/LF from file
 // contents (curl's documented --data behavior); --data-binary preserves them.
-async function readDataFile(ref: string): Promise<string> {
-  if (ref === '-') return await Bun.stdin.text()
+async function readDataFile(ref: string, binary = false): Promise<string | ArrayBuffer> {
+  if (ref === '-') {
+    return binary ? await Bun.stdin.arrayBuffer() : await Bun.stdin.text()
+  }
   if (ref === '') {
     fail(`couldn't read data from file ""`, '--data-raw sends the literal string')
   }
@@ -221,7 +223,7 @@ async function readDataFile(ref: string): Promise<string> {
     fail(`couldn't read data from file "${ref}"`, '--data-raw sends the literal string')
   }
   try {
-    return await file.text()
+    return binary ? await file.arrayBuffer() : await file.text()
   } catch (e) {
     fail(
       `couldn't read data from file "${ref}": ${(e as Error).message}`,
@@ -230,15 +232,17 @@ async function readDataFile(ref: string): Promise<string> {
   }
 }
 
-async function readDataArg(value: string, stripNewlines: boolean): Promise<string> {
+async function readDataArg(value: string, stripNewlines: boolean): Promise<string | ArrayBuffer> {
   if (!value.startsWith('@')) return value
-  const text = await readDataFile(value.slice(1))
-  return stripNewlines ? text.replace(/[\r\n]/g, '') : text
+  const data = await readDataFile(value.slice(1), !stripNewlines)
+  return stripNewlines && typeof data === 'string' ? data.replace(/[\r\n]/g, '') : data
 }
 
 // -d wins over --data-raw wins over --data-binary when more than one is
 // given, matching the precedence of the old .find([data, raw, binary]).
-async function resolveData(flags: Record<string, unknown>): Promise<string | undefined> {
+async function resolveData(
+  flags: Record<string, unknown>
+): Promise<string | ArrayBuffer | undefined> {
   if (typeof flags.data === 'string') return await readDataArg(flags.data, true)
   if (typeof flags['data-raw'] === 'string') return flags['data-raw']
   if (typeof flags['data-binary'] === 'string')
@@ -383,7 +387,7 @@ export async function root(argv: string[]) {
           while (true) {
             const { done, value } = await readWithDeadline(reader, deadline)
             if (done || !value) break
-            if (value.byteLength >= guards.maxBytes - written) {
+            if (value.byteLength > guards.maxBytes - written) {
               await reader.cancel().catch(() => {})
               await Promise.resolve(sink.end()).catch(() => {})
               await Bun.file(tmpOut)
@@ -425,14 +429,13 @@ export async function root(argv: string[]) {
       timeoutError(e, guards.timeoutMs)
       return fail(`read failed: ${(e as Error).message}`)
     }
-    const raw = decodeBody(capped.bytes, res.headers.get('content-type'))
     // --body: the classic Unix pipe mode — body only on stdout, no display
     // cap (downloads are still bounded by --max-bytes). Anything unusual is
     // announced on stderr so the pipe never lies by omission.
     if (flags.body === true) {
-      if (raw.length > 0) process.stdout.write(raw)
+      if (capped.bytes.byteLength > 0) process.stdout.write(capped.bytes)
       if (!res.ok) process.stderr.write(`ax: note: HTTP ${res.status} ${res.statusText}\n`)
-      if (raw.length === 0) process.stderr.write('ax: note: empty body\n')
+      if (capped.bytes.byteLength === 0) process.stderr.write('ax: note: empty body\n')
       if (capped.capped) {
         process.stderr.write(
           `ax: note: download stopped at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap)\n`
@@ -440,6 +443,7 @@ export async function root(argv: string[]) {
       }
       exitPerFail()
     }
+    const raw = decodeBody(capped.bytes, res.headers.get('content-type'))
     const budgetTokens = flags.all === true ? Infinity : opts.budget > 0 ? opts.budget : 500
     const maxChars = budgetTokens * 4
     const truncated = raw.length > maxChars

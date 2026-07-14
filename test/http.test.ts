@@ -35,6 +35,8 @@ const SJIS_META_BODY = concatBytes([
 const BAD_CHARSET_BODY = ascii('<html><head></head><body><p class="msg">hello</p></body></html>')
 // "café €" in windows-1252: 0xE9 = é, 0x80 = € (a C1 control in real ISO-8859-1 —
 // the byte that proves the WHATWG iso-8859-1 → windows-1252 alias was applied).
+const EXACT_LIMIT = 10_000
+const BINARY_BODY = Uint8Array.of(0x00, 0xff, 0x41)
 const LATIN1_BODY = concatBytes([
   ascii('<html><head></head><body><p class="msg">caf'),
   Uint8Array.of(0xe9, 0x20, 0x80),
@@ -70,6 +72,16 @@ async function ax(args: string[], stdin?: string) {
   return { out: out.trim(), err: err.trim(), code }
 }
 
+async function axBytes(args: string[]) {
+  const proc = Bun.spawn(['bun', ENTRY, ...args], { stdout: 'pipe', stderr: 'pipe' })
+  const [out, err] = await Promise.all([
+    new Response(proc.stdout).arrayBuffer(),
+    new Response(proc.stderr).text(),
+  ])
+  const code = await proc.exited
+  return { out: new Uint8Array(out), err: err.trim(), code }
+}
+
 beforeAll(() => {
   server = Bun.serve({
     port: 0,
@@ -78,8 +90,12 @@ beforeAll(() => {
       if (url.pathname === '/json') return Response.json({ users: [{ name: 'a' }] })
       if (url.pathname === '/empty') return new Response('')
       if (url.pathname === '/big') return new Response('x'.repeat(10000))
+      if (url.pathname === '/exact-limit') return new Response('x'.repeat(EXACT_LIMIT))
+      if (url.pathname === '/binary') return new Response(BINARY_BODY)
       if (url.pathname === '/echo')
         return req.text().then((t) => new Response(`${req.method}:${t}`))
+      if (url.pathname === '/echo-bytes')
+        return req.arrayBuffer().then((bytes) => new Response(bytes))
       if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
       if (url.pathname === '/endless') {
         // 1MB chunked stream, no Content-Length — hostile-sized body without
@@ -256,6 +272,25 @@ test('guard: endless stream stops at --max-bytes, announced in-band', async () =
   expect(rep.status).toBe(200)
 })
 
+test('guard: an exact --max-bytes response is accepted in fetch, parse, and -o modes', async () => {
+  const url = `http://localhost:${server.port}/exact-limit`
+  const fetched = await ax([url, '--all', '--max-bytes', String(EXACT_LIMIT)])
+  const report = JSON.parse(fetched.out)
+  expect(fetched.code).toBe(0)
+  expect(report.body).toHaveLength(EXACT_LIMIT)
+  expect(report.download_capped).toBeUndefined()
+
+  const parsed = await ax([url, '--outline', '--fresh', '--max-bytes', String(EXACT_LIMIT)])
+  expect(parsed.code).toBe(0)
+  expect(parsed.err).not.toContain('exceeded')
+
+  const out = join(dataDir, 'exact-limit.bin')
+  const saved = await ax([url, '-o', out, '--max-bytes', String(EXACT_LIMIT)])
+  expect(saved.code).toBe(0)
+  expect(JSON.parse(saved.out).bytes).toBe(EXACT_LIMIT)
+  expect((await Bun.file(out).arrayBuffer()).byteLength).toBe(EXACT_LIMIT)
+})
+
 test('guard: parse mode refuses a capped body, never half-parses', async () => {
   const r = await ax([
     `http://localhost:${server.port}/endless`,
@@ -320,6 +355,28 @@ test('--body: body only on stdout, uncapped, notes on stderr', async () => {
   expect(empty.err).toContain('empty body')
   const failed = await ax([`http://localhost:${server.port}/nope`, '--body', '-f'])
   expect(failed.code).toBe(22)
+})
+
+test('--body preserves response bytes for binary pipes', async () => {
+  const r = await axBytes([`http://localhost:${server.port}/binary`, '--body'])
+  expect(r.code).toBe(0)
+  expect([...r.out]).toEqual([...BINARY_BODY])
+  expect(r.err).toBe('')
+})
+
+test('--data-binary @file sends bytes unchanged', async () => {
+  const input = join(dataDir, 'request.bin')
+  const bytes = Uint8Array.of(0xff, 0x0a, 0x80)
+  await Bun.file(input).write(bytes)
+  const r = await axBytes([
+    `http://localhost:${server.port}/echo-bytes`,
+    '--data-binary',
+    `@${input}`,
+    '--body',
+  ])
+  expect(r.code).toBe(0)
+  expect([...r.out]).toEqual([...bytes])
+  expect(r.err).toBe('')
 })
 
 test('charset: Content-Type charset decodes Shift_JIS (fetch and parse mode)', async () => {
