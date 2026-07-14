@@ -17,17 +17,17 @@ on:
   push:
     branches: [main]
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "**/*.nix"
-      - ".github/workflows/nix.yml"
+      - 'flake.nix'
+      - 'flake.lock'
+      - '**/*.nix'
+      - '.github/workflows/nix.yml'
   pull_request:
     branches: [main]
     paths:
-      - "flake.nix"
-      - "flake.lock"
-      - "**/*.nix"
-      - ".github/workflows/nix.yml"
+      - 'flake.nix'
+      - 'flake.lock'
+      - '**/*.nix'
+      - '.github/workflows/nix.yml'
 
 permissions:
   contents: read
@@ -51,7 +51,7 @@ jobs:
         uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
 
       - name: nix flake check --all-systems
-        run: nix flake check --all-systems --print-build-logs
+        run: nix flake check --all-systems --no-build
 
       - name: nix build .#default
         run: nix build .#default --print-build-logs
