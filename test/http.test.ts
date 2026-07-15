@@ -88,6 +88,10 @@ beforeAll(() => {
     fetch(req) {
       const url = new URL(req.url)
       if (url.pathname === '/json') return Response.json({ users: [{ name: 'a' }] })
+      if (url.pathname === '/redirect')
+        return new Response(null, { status: 302, headers: { location: '/json' } })
+      if (url.pathname === '/redirect-error')
+        return new Response(null, { status: 302, headers: { location: '/nope' } })
       if (url.pathname === '/empty') return new Response('')
       if (url.pathname === '/big') return new Response('x'.repeat(10000))
       if (url.pathname === '/exact-limit') return new Response('x'.repeat(EXACT_LIMIT))
@@ -169,12 +173,45 @@ beforeAll(async () => {
 afterAll(() => rm(dataDir, { recursive: true, force: true }))
 
 test('http: JSON body is parsed and pipeable', async () => {
-  const r = await ax([`http://localhost:${server.port}/json`])
+  const url = `http://localhost:${server.port}/json`
+  const r = await ax([url])
   const rep = JSON.parse(r.out)
   expect(rep.status).toBe(200)
   expect(rep.ok).toBe(true)
+  expect(rep.url).toBe(url)
+  expect(rep.redirected).toBe(false)
   expect(rep.body.users[0].name).toBe('a')
   expect(typeof rep.ms).toBe('number')
+})
+
+test('redirects: structured reports expose the final URL', async () => {
+  const finalUrl = `http://localhost:${server.port}/json`
+  const redirected = await ax([`http://localhost:${server.port}/redirect`])
+  const report = JSON.parse(redirected.out)
+  expect(report.url).toBe(finalUrl)
+  expect(report.redirected).toBe(true)
+
+  const out = join(dataDir, 'redirect-output.json')
+  const saved = await ax([`http://localhost:${server.port}/redirect`, '-o', out])
+  const savedReport = JSON.parse(saved.out)
+  expect(savedReport.url).toBe(finalUrl)
+  expect(savedReport.redirected).toBe(true)
+  expect(await Bun.file(out).json()).toEqual({ users: [{ name: 'a' }] })
+
+  await Bun.write(out, 'GOOD')
+  const failed = await ax([`http://localhost:${server.port}/redirect-error`, '-f', '-o', out])
+  const failedReport = JSON.parse(failed.out)
+  expect(failed.code).toBe(22)
+  expect(failedReport.url).toBe(`http://localhost:${server.port}/nope`)
+  expect(failedReport.redirected).toBe(true)
+  expect(await Bun.file(out).text()).toBe('GOOD')
+})
+
+test('redirects: --body keeps stdout pure and notes the final URL on stderr', async () => {
+  const finalUrl = `http://localhost:${server.port}/json`
+  const redirected = await ax([`http://localhost:${server.port}/redirect`, '--body'])
+  expect(JSON.parse(redirected.out)).toEqual({ users: [{ name: 'a' }] })
+  expect(redirected.err).toBe(`ax: note: redirected to ${finalUrl}`)
 })
 
 // The whole point: an empty body still yields a full report (curl -s shows nothing).

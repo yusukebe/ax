@@ -11,7 +11,7 @@ HTML, and never use bare curl (it returns nothing on empty bodies).
 ## Cheatsheet
 
 ```sh
-ax https://api.site.example/users                    # {status, ok, ms, headers, body} — never silent
+ax https://api.site.example/users                    # {status, ok, url, redirected, ms, headers, body}
 ax https://api.site.example/users -H 'authorization: Bearer x' -X POST -d '{"a":1}'
 ax https://api.site.example/users -d @payload.json  # @file reads it, implies POST; --data-raw = literal @string
 # curl reflexes work: -u -I -o -k -m -f --data-raw (and -L/-i/-s are no-ops)

@@ -14,9 +14,10 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
         body is never saved — the file keeps whatever it had before);
       --data-raw is literal (@ isn't a file ref), --data-binary keeps \n
       -L/-i/-s/-S/--compressed are accepted no-ops
-      --body prints the body only, uncapped (status notes move to stderr)
-    → {status, ok, ms, headers, body}. Empty bodies and error statuses still
-      produce a full report. JSON bodies are parsed. Fetch mode never
+      --body prints the body only, uncapped (redirect/status notes go to stderr)
+    → {status, ok, url, redirected, ms, headers, body}; url is the final URL.
+      Empty bodies and error statuses still produce a full report. JSON bodies are
+      parsed. Fetch mode never
       caches — every request is live.
       Downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>);
       capped or timed-out reads are always announced, never silent.

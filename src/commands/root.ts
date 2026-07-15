@@ -21,7 +21,7 @@ usage:
   ax <url|file|-> [selector] [options]
 
 fetch (no selector — curl parity, but never silent):
-  ax https://api.example.com/users        {status, ok, ms, headers, body}
+  ax https://api.example.com/users        {status, ok, url, redirected, ms, headers, body}
   -X, --method <m>   -H, --header <k: v>   -d, --data <body|@file|@->
   curl reflexes work: -u user:pass  -I (HEAD)  -o <file>  -k  -m <secs>
   -f (HTTP errors -> exit 22, report still printed; with -o the error body
@@ -29,7 +29,7 @@ fetch (no selector — curl parity, but never silent):
   --data-raw <literal> (never reads @ as a file)  --data-binary <body|@file>
   (-d strips CR/LF from @file contents, curl-style; --data-binary keeps them)
   -L -i -s -S --compressed are accepted no-ops
-  --body             body only on stdout, uncapped (notes on stderr; for pipes)
+  --body             body only on stdout, uncapped (redirect/status notes on stderr)
   JSON bodies are parsed; fetch mode never caches — every request is live
   noisy response headers are omitted (announced; --headers shows all)
   downloads stop at 20MB / 30s by default (--max-bytes <n>, -m <secs>; capped
@@ -352,6 +352,7 @@ export async function root(argv: string[]) {
       return fail(`request failed: ${(e as Error).message}`, `is the server running at ${src}?`)
     }
     const ms = Math.round(performance.now() - started)
+    const responseTarget = { url: res.url, redirected: res.redirected }
     // curl parity: -f turns HTTP errors into a failing exit code (curl uses
     // 22). Unlike curl we still print the full report — the agent needs the
     // status and body to act, never-silent applies to failures most of all.
@@ -368,7 +369,14 @@ export async function root(argv: string[]) {
       if (flags.fail === true && !res.ok) {
         process.stdout.write(
           JSON.stringify(
-            { status: res.status, ok: false, ms, saved: null, note: '-f: error body not saved' },
+            {
+              status: res.status,
+              ok: false,
+              ...responseTarget,
+              ms,
+              saved: null,
+              note: '-f: error body not saved',
+            },
             null,
             2
           ) + '\n'
@@ -422,7 +430,14 @@ export async function root(argv: string[]) {
       }
       process.stdout.write(
         JSON.stringify(
-          { status: res.status, ok: res.ok, ms, saved: flags.output, bytes: written },
+          {
+            status: res.status,
+            ok: res.ok,
+            ...responseTarget,
+            ms,
+            saved: flags.output,
+            bytes: written,
+          },
           null,
           2
         ) + '\n'
@@ -441,6 +456,7 @@ export async function root(argv: string[]) {
     // announced on stderr so the pipe never lies by omission.
     if (flags.body === true) {
       if (capped.bytes.byteLength > 0) process.stdout.write(capped.bytes)
+      if (res.redirected) process.stderr.write(`ax: note: redirected to ${res.url}\n`)
       if (!res.ok) process.stderr.write(`ax: note: HTTP ${res.status} ${res.statusText}\n`)
       if (capped.bytes.byteLength === 0) process.stderr.write('ax: note: empty body\n')
       if (capped.capped) {
@@ -478,6 +494,7 @@ export async function root(argv: string[]) {
         {
           status: res.status,
           ok: res.ok,
+          ...responseTarget,
           ms,
           headers: reportHeaders,
           ...(omitted > 0 ? { headers_omitted: `${omitted} (--headers for all)` } : {}),
