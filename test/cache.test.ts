@@ -28,7 +28,8 @@ beforeAll(() => {
     fetch(req) {
       const url = new URL(req.url)
       hits[url.pathname] = (hits[url.pathname] ?? 0) + 1
-      const html = '<html><body><p class="x">hello</p></body></html>'
+      const value = req.headers.get('x-view') ?? 'hello'
+      const html = `<html><body><p class="x">${value}</p></body></html>`
       if (url.pathname === '/nostore')
         return new Response(html, {
           headers: { 'content-type': 'text/html', 'cache-control': 'no-store' },
@@ -68,6 +69,19 @@ test('cache: credential-bearing URLs are not cached', async () => {
   const url = `http://localhost:${server.port}/signed?token=supersecret`
   await ax([url, '.x', '--fresh'])
   expect(await Bun.file(join(CACHE_DIR, keyFor(url))).exists()).toBe(false)
+})
+
+test('cache: custom request headers bypass URL cache reads and writes', async () => {
+  const url = `http://localhost:${server.port}/header-vary`
+  await ax([url, '.x', '--fresh'])
+  const first = await ax([url, '.x', '-H', 'x-view: private'])
+  const second = await ax([url, '.x', '-H', 'x-view: private'])
+  const anonymous = await ax([url, '.x'])
+  expect(first.out).toBe('private')
+  expect(second.out).toBe('private')
+  expect(anonymous.out).toBe('hello')
+  expect(anonymous.err).toContain('cached fetch')
+  expect(hits['/header-vary']).toBe(3)
 })
 
 test('cache: expired entries are swept, tmp files do not linger', async () => {

@@ -41,7 +41,8 @@ discover (unknown page? never dump raw HTML):
   --count            how many elements match <selector>
   parse-mode URLs are cached ~2min so probing is free (hits announced;
   --fresh = refetch then re-cache, --no-cache = never touch the disk;
-  Cache-Control: no-store and credential-bearing URLs are never cached)
+  Cache-Control: no-store, credential-bearing URLs, and requests with -H/-u
+  are never cached)
 
 extract (selector — CSS, structured):
   --row 'title=a, href=a@href, level=.cefr'   structured rows (@attr reads
@@ -59,6 +60,7 @@ output shape (token-cheap by design):
 
 examples:
   ax https://site.example '.item > a' --row 'title=, href=@href'
+  ax https://site.example '.private' -H 'authorization: Bearer x' --text
   ax https://site.example --outline
   ax https://docs.site.example/guide --md --budget 800
   ax page.html 'table.stats' --table --where 'Stars >= 30000'
@@ -100,6 +102,19 @@ const KEEP_HEADERS = new Set([
 ])
 
 const collapse = (s: string) => s.trim().replace(/\s+/g, ' ')
+
+function requestHeaders(flags: Record<string, unknown>): Record<string, string> {
+  const headers: Record<string, string> = {}
+  for (const h of (flags.header ?? []) as string[]) {
+    const idx = h.indexOf(':')
+    if (idx === -1) fail(`bad header (expected 'Name: value'): ${h}`)
+    headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim()
+  }
+  if (typeof flags.user === 'string') {
+    headers['authorization'] = 'Basic ' + Buffer.from(flags.user).toString('base64')
+  }
+  return headers
+}
 
 // User-supplied selectors reach css-what/linkedom, which throw plain Errors
 // (with node_modules stack traces) on malformed CSS — never let those leak
@@ -301,6 +316,7 @@ export async function root(argv: string[]) {
     budget: num(flags.budget, 0),
   }
   const isUrl = /^https?:\/\//.test(src!)
+  const headers = isUrl ? requestHeaders(flags) : {}
   const parseFlags =
     selector !== undefined ||
     flags.outline === true ||
@@ -310,15 +326,6 @@ export async function root(argv: string[]) {
 
   // --- fetch mode: curl parity, structured, never silent ---
   if (isUrl && !parseFlags) {
-    const headers: Record<string, string> = {}
-    for (const h of (flags.header ?? []) as string[]) {
-      const idx = h.indexOf(':')
-      if (idx === -1) fail(`bad header (expected 'Name: value'): ${h}`)
-      headers[h.slice(0, idx).trim()] = h.slice(idx + 1).trim()
-    }
-    if (typeof flags.user === 'string') {
-      headers['authorization'] = 'Basic ' + Buffer.from(flags.user).toString('base64')
-    }
     const data = await resolveData(flags)
     const method =
       typeof flags.method === 'string'
@@ -494,7 +501,7 @@ export async function root(argv: string[]) {
   }
 
   // --- parse mode ---
-  const { document } = parseHTML(await readSource(src, guardsFromFlags(flags)))
+  const { document } = parseHTML(await readSource(src, { ...guardsFromFlags(flags), headers }))
   const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
 
   // JS-shell diagnosis: a 200 with an SPA husk is the sneakiest "success".

@@ -19,6 +19,10 @@ export type FetchGuards = {
   noCache?: boolean
 }
 
+export type ReadSourceOptions = FetchGuards & {
+  headers?: Record<string, string>
+}
+
 export function guardsFromFlags(flags: Record<string, unknown>): Required<FetchGuards> {
   const mb = typeof flags['max-bytes'] === 'string' ? Number(flags['max-bytes']) : NaN
   const mt = typeof flags['max-time'] === 'string' ? Number(flags['max-time']) * 1000 : NaN
@@ -189,16 +193,20 @@ function metaCharset(bytes: Uint8Array): string | null {
 }
 
 // Read a source that is a URL, a file path, or "-" (stdin).
-export async function readSource(src: string | undefined, guards?: FetchGuards): Promise<string> {
+export async function readSource(
+  src: string | undefined,
+  options?: ReadSourceOptions
+): Promise<string> {
   if (src === undefined || src === '-') {
     return await Bun.stdin.text()
   }
   if (/^https?:\/\//.test(src)) {
-    const g = { maxBytes: DEFAULT_MAX_BYTES, timeoutMs: DEFAULT_TIMEOUT_MS, ...guards }
+    const g = { maxBytes: DEFAULT_MAX_BYTES, timeoutMs: DEFAULT_TIMEOUT_MS, ...options }
     const key = new Bun.CryptoHasher('sha256').update(src).digest('hex').slice(0, 24)
     const cached = Bun.file(join(FETCH_CACHE, key))
-    const fresh = guards?.fresh ?? process.argv.includes('--fresh')
-    const noCache = guards?.noCache ?? process.argv.includes('--no-cache')
+    const fresh = options?.fresh ?? process.argv.includes('--fresh')
+    const hasCustomHeaders = Object.keys(options?.headers ?? {}).length > 0
+    const noCache = (options?.noCache ?? process.argv.includes('--no-cache')) || hasCustomHeaders
     if (
       !fresh &&
       !noCache &&
@@ -213,7 +221,10 @@ export async function readSource(src: string | undefined, guards?: FetchGuards):
     let res: Response
     let body: CappedBody
     try {
-      res = await fetch(src, { signal: AbortSignal.timeout(g.timeoutMs) })
+      res = await fetch(src, {
+        headers: options?.headers,
+        signal: AbortSignal.timeout(g.timeoutMs),
+      })
       if (!res.ok) fail(`fetch failed: ${res.status} ${res.statusText} for ${src}`)
       body = await readBodyCapped(res, g.maxBytes, deadline)
     } catch (e) {

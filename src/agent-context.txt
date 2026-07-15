@@ -33,6 +33,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
 
     ax URL '.item' --row 'title=a, href=a@href, level=.cefr'
       @attr reads attributes; empty sel (id=@data-id) = the match itself
+    ax URL '.private' -H 'authorization: Bearer x' --text
+      parse requests accept -H and -u; custom headers bypass the URL cache
     ax URL 'table' --table                 <table> → rows keyed by headers
     ax URL '.item a' --attr href | --text | --html
     ax URL --md                            readable page as markdown (docs!)

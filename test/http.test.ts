@@ -97,6 +97,16 @@ beforeAll(() => {
       if (url.pathname === '/echo-bytes')
         return req.arrayBuffer().then((bytes) => new Response(bytes))
       if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
+      if (url.pathname === '/header-page') {
+        if (req.headers.get('x-api-key') !== 'parse-secret')
+          return new Response('unauthorized', { status: 401 })
+        return new Response('<html><body><p class="secret">header access</p></body></html>')
+      }
+      if (url.pathname === '/basic-page') {
+        if (req.headers.get('authorization') !== 'Basic dXNlcjpwYXNz')
+          return new Response('unauthorized', { status: 401 })
+        return new Response('<html><body><p class="secret">basic access</p></body></html>')
+      }
       if (url.pathname === '/endless') {
         // 1MB chunked stream, no Content-Length — hostile-sized body without
         // starving the test runner's event loop (a truly infinite pull() would).
@@ -253,6 +263,23 @@ test('curl reflexes: -u sends basic auth, -I does HEAD, --data-raw posts', async
   expect(JSON.parse(head.out).status).toBe(200)
   const raw = await ax([`http://localhost:${server.port}/echo`, '--data-raw', 'xyz'])
   expect(JSON.parse(raw.out).body).toBe('POST:xyz')
+})
+
+test('parse mode forwards custom request headers', async () => {
+  const r = await ax([
+    `http://localhost:${server.port}/header-page`,
+    '.secret',
+    '-H',
+    'x-api-key: parse-secret',
+  ])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('header access')
+})
+
+test('parse mode forwards basic auth', async () => {
+  const r = await ax([`http://localhost:${server.port}/basic-page`, '.secret', '-u', 'user:pass'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('basic access')
 })
 
 test('curl reflexes: no-op flags accepted silently, -o saves body', async () => {

@@ -19,6 +19,7 @@ ax https://site.example --outline                    # discover: repeating struc
 ax https://site.example --locate 'some text'         # discover: which selector holds this
 ax https://site.example '.card' --count              # confirm a hypothesis
 ax https://site.example '.card' --row 'title=a, href=a@href, id=@data-id'
+ax https://site.example '.private' -H 'authorization: Bearer x' --text
 ax https://site.example 'table' --table --where 'Stars >= 30000'
 ax https://site.example 'table' --table --where '`Col With Spaces` ~ /x/'
 ax https://docs.site.example/guide --md --budget 800 # read docs as markdown
@@ -26,7 +27,8 @@ ax https://docs.site.example/guide --md --budget 800 # read docs as markdown
 
 The workflow: fetch/--outline once → --locate/--count to confirm → ONE
 --row/--table call. Repeat fetches of the same URL are cached ~2min, so
-probing is free (--fresh to bypass).
+probing is free (--fresh to bypass). Parse requests with -H or -u bypass
+the cache automatically.
 
 ## Speed discipline
 

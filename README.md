@@ -18,7 +18,7 @@ Coding agents do one web loop constantly: **fetch → understand → extract**. 
 ax replaces the loop with one command:
 
 - **Fetch, never silent** — `{status, ok, ms, headers, body}` for every request. Empty bodies and error statuses still produce a full report. JSON bodies are parsed. Fetch mode never caches — every request is live. (`--body` gives you the classic pipe: body only on stdout.)
-- **Discover, don't dump** — `--outline` shows a page's repeating structures; `--locate 'text'` answers "which selector holds this?" — no raw HTML ever hits the context. Parse-mode URLs are cached for ~2 minutes so probing is free (every hit announced on stderr; `--fresh` refetches, `--no-cache` never touches the disk).
+- **Discover, don't dump** — `--outline` shows a page's repeating structures; `--locate 'text'` answers "which selector holds this?" — no raw HTML ever hits the context. Parse-mode URLs are cached for ~2 minutes so probing is free (every hit announced on stderr; `--fresh` refetches, `--no-cache` never touches the disk). Parse requests accept `-H` and `-u`; requests with custom headers bypass the cache.
 - **Extract, structured** — `--row 'title=a, href=a@href'` pulls multi-field rows in one call; `--table` turns `<table>` into keyed rows; `--where` filters with a safe expression language.
 - **Token-cheap by design** — results cap at 50 with a stderr note (never silent truncation), `--budget <tokens>` caps output by estimated tokens, rows default to header-once TSV (`--json` for JSON).
 
