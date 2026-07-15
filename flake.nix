@@ -11,24 +11,24 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        version = "0.1.12";
+        version = "0.1.13";
 
         assets = {
           "x86_64-linux" = {
             file = "ax-linux-x64";
-            sha256 = "0ak759f660sfhmj9v4w9asw8ifdh4jb1n527rk5wvqcyvmbxjypc";
+            sha256 = "0rsfimhj090wshs65fn2ynwxclrvzm86lb96gsgs8m8c9d0xm4qi";
           };
           "aarch64-linux" = {
             file = "ax-linux-arm64";
-            sha256 = "0pl5drdv2iw1zkhhglb6jxywxmjyw5qwdk8mnm5wffnmwnz5118q";
+            sha256 = "0jzi4rvwp47h0g4qji6n9iway1i5ip7pb1bxryj4w2ja6zmzw1z9";
           };
           "x86_64-darwin" = {
             file = "ax-darwin-x64";
-            sha256 = "0rjvmz3s0rdy2bhmljl4rinahdibx680yvwq110l55gbsrb93fh6";
+            sha256 = "1zhqkjafj82si4m73mk9z2bvmakhzqwnhx2gwy8z35nq35k1hckf";
           };
           "aarch64-darwin" = {
             file = "ax-darwin-arm64";
-            sha256 = "1ccl2xgabrfjxshz8ny048mdlzdp1fzfjgv5klikzhvbl0faph2r";
+            sha256 = "1x35012km466ipp163yr8sz5xdqqbr44hc1lg17if41hcgzyvqf1";
           };
         };
 
