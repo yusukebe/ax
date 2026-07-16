@@ -68,7 +68,15 @@ async function sweepExpired(): Promise<void> {
 }
 
 // URLs that visibly carry credentials should not leave bodies on disk.
-const SENSITIVE_URL = /[?&](token|api[_-]?key|key|secret|signature|sig|password|auth)=/i
+const SENSITIVE_QUERY_PART =
+  /(?:^|[_-])(?:token|api[_-]?key|key|secret|signature|sig|credential|password|authorization|auth)(?:$|[_-])/
+
+function hasSensitiveQuery(src: string): boolean {
+  return [...new URL(src).searchParams.keys()].some((name) => {
+    const normalized = name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase()
+    return SENSITIVE_QUERY_PART.test(normalized)
+  })
+}
 
 export type CappedBody = { bytes: Uint8Array; capped: boolean }
 
@@ -242,7 +250,7 @@ export async function readSource(
     // be served later as if it were the real page. Servers that say
     // no-store, credential-bearing URLs, and --no-cache all skip the disk.
     const noStore = (res.headers.get('cache-control') ?? '').toLowerCase().includes('no-store')
-    if (!noCache && !noStore && !SENSITIVE_URL.test(src)) {
+    if (!noCache && !noStore && !hasSensitiveQuery(src)) {
       await cacheWrite(key, text)
     }
     return text

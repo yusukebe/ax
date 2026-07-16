@@ -66,9 +66,31 @@ test('cache: --no-cache skips read and write', async () => {
 })
 
 test('cache: credential-bearing URLs are not cached', async () => {
-  const url = `http://localhost:${server.port}/signed?token=supersecret`
-  await ax([url, '.x', '--fresh'])
-  expect(await Bun.file(join(CACHE_DIR, keyFor(url))).exists()).toBe(false)
+  const sensitiveNames = [
+    'access_token',
+    'refreshToken',
+    'client_secret',
+    'auth_token',
+    'X-Amz-Signature',
+    'X-Amz-Credential',
+    'access%5Ftoken',
+    'token',
+    'api_key',
+  ]
+  for (const [i, name] of sensitiveNames.entries()) {
+    const url = `http://localhost:${server.port}/signed-${i}?${name}=supersecret`
+    await ax([url, '.x', '--fresh'])
+    expect(await Bun.file(join(CACHE_DIR, keyFor(url))).exists()).toBe(false)
+  }
+})
+
+test('cache: benign query parameter names remain cacheable', async () => {
+  const benignNames = ['monkey', 'secretary', 'authentication_mode']
+  for (const [i, name] of benignNames.entries()) {
+    const url = `http://localhost:${server.port}/benign-${i}?${name}=value`
+    await ax([url, '.x', '--fresh'])
+    expect(await Bun.file(join(CACHE_DIR, keyFor(url))).exists()).toBe(true)
+  }
 })
 
 test('cache: custom request headers bypass URL cache reads and writes', async () => {
