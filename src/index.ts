@@ -2,7 +2,7 @@
 import agentContext from './agent-context.txt' with { type: 'text' }
 import { root, rootHelp } from './commands/root'
 
-const VERSION = '0.1.14'
+const VERSION = '0.1.15'
 
 async function main() {
   const argv = process.argv.slice(2)

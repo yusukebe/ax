@@ -1,6 +1,6 @@
 {
   "name": "ax",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "The AI-era curl: fetch, discover, extract. One command.",
   "license": "MIT",
   "author": "Yusuke Wada <yusuke@kamawada.com>",
