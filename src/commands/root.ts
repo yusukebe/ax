@@ -327,6 +327,12 @@ export async function root(argv: string[]) {
   // --- fetch mode: curl parity, structured, never silent ---
   if (isUrl && !parseFlags) {
     const data = await resolveData(flags)
+    if (
+      data !== undefined &&
+      !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')
+    ) {
+      headers['content-type'] = 'application/x-www-form-urlencoded'
+    }
     const method =
       typeof flags.method === 'string'
         ? flags.method.toUpperCase()

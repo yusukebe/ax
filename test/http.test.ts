@@ -98,6 +98,14 @@ beforeAll(() => {
       if (url.pathname === '/binary') return new Response(BINARY_BODY)
       if (url.pathname === '/echo')
         return req.text().then((t) => new Response(`${req.method}:${t}`))
+      if (url.pathname === '/request-info')
+        return req.text().then((body) =>
+          Response.json({
+            method: req.method,
+            contentType: req.headers.get('content-type'),
+            body,
+          })
+        )
       if (url.pathname === '/echo-bytes')
         return req.arrayBuffer().then((bytes) => new Response(bytes))
       if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
@@ -236,6 +244,38 @@ test('http: --budget truncates with an explicit note', async () => {
 test('http: -d implies POST and sends the body', async () => {
   const rep = JSON.parse((await ax([`http://localhost:${server.port}/echo`, '-d', 'hi'])).out)
   expect(rep.body).toBe('POST:hi')
+})
+
+test('curl reflexes: data flags default to form content type unless overridden', async () => {
+  const url = `http://localhost:${server.port}/request-info`
+  for (const flag of ['-d', '--data-raw', '--data-binary']) {
+    const rep = JSON.parse((await ax([url, flag, 'a=1'])).out)
+    expect(rep.body).toEqual({
+      method: 'POST',
+      contentType: 'application/x-www-form-urlencoded',
+      body: 'a=1',
+    })
+  }
+
+  const file = join(dataDir, 'payload.json')
+  const binary = JSON.parse((await ax([url, '--data-binary', `@${file}`])).out)
+  expect(binary.body.contentType).toBe('application/x-www-form-urlencoded')
+  expect(binary.body.body).toBe('{"a":1}\r\n')
+
+  const explicit = JSON.parse(
+    (await ax([url, '-d', '{"a":1}', '-H', 'CONTENT-TYPE: application/json'])).out
+  )
+  expect(explicit.body.contentType).toBe('application/json')
+
+  const emptyBody = JSON.parse((await ax([url, '-d', ''])).out)
+  expect(emptyBody.body.contentType).toBe('application/x-www-form-urlencoded')
+  expect(emptyBody.body.body).toBe('')
+
+  const empty = JSON.parse((await ax([url, '-d', '', '-H', 'Content-Type:'])).out)
+  expect(empty.body.contentType).toBe('')
+
+  const noData = JSON.parse((await ax([url])).out)
+  expect(noData.body.contentType).toBe(null)
 })
 
 test('http: -d @file sends file contents with CR/LF stripped', async () => {
