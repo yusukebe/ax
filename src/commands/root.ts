@@ -135,8 +135,42 @@ function queryAll(root: ParentNode, sel: string): Element[] {
   }
 }
 
+function escapeCssIdentifier(value: string): string {
+  let result = ''
+  const first = value.charCodeAt(0)
+
+  if (value.length === 1 && first === 45) return '\\-'
+
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index)
+    if (code === 0) {
+      result += '\uFFFD'
+    } else if (
+      (code >= 1 && code <= 31) ||
+      code === 127 ||
+      (index === 0 && code >= 48 && code <= 57) ||
+      (index === 1 && code >= 48 && code <= 57 && first === 45)
+    ) {
+      result += `\\${code.toString(16)} `
+    } else if (
+      code >= 128 ||
+      code === 45 ||
+      code === 95 ||
+      (code >= 48 && code <= 57) ||
+      (code >= 65 && code <= 90) ||
+      (code >= 97 && code <= 122)
+    ) {
+      result += value[index]
+    } else {
+      result += `\\${value[index]}`
+    }
+  }
+
+  return result
+}
+
 function signature(el: Element): string {
-  const classes = [...el.classList]
+  const classes = [...el.classList].map(escapeCssIdentifier)
   return el.localName + (classes.length ? '.' + classes.join('.') : '')
 }
 
@@ -144,7 +178,7 @@ function selectorPath(el: Element): string {
   const parts: string[] = []
   let node: Element | null = el
   while (node && node.localName !== 'body' && node.localName !== 'html') {
-    parts.unshift(node.id ? `${node.localName}#${node.id}` : signature(node))
+    parts.unshift(node.id ? `${node.localName}#${escapeCssIdentifier(node.id)}` : signature(node))
     node = node.parentElement
   }
   return parts.join(' > ')

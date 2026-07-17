@@ -66,6 +66,28 @@ test('discover: --outline and --locate', () => {
   expect(hits[0].selector).toContain('a')
 })
 
+test('discover: emitted selectors round-trip CSS-special class and id names', () => {
+  writeFileSync(
+    join(dir, 'special-selectors.html'),
+    `<html><body><main>
+      <div class="card sm:w-1/2 hover:bg-blue-500">First needle</div>
+      <div class="card sm:w-1/2 hover:bg-blue-500">Second needle</div>
+      <section id="panel:1">Special id</section>
+    </main></body></html>`
+  )
+
+  const outline = ax(['special-selectors.html', '--outline'])
+  expect(outline.out).toContain(String.raw`div.card.sm\:w-1\/2.hover\:bg-blue-500`)
+
+  const classHit = JSON.parse(ax(['special-selectors.html', '--locate', 'First needle']).out)[0]
+  expect(classHit.selector).toBe(String.raw`main > div.card.sm\:w-1\/2.hover\:bg-blue-500`)
+  expect(ax(['special-selectors.html', classHit.selector, '--count']).out).toBe('2')
+
+  const idHit = JSON.parse(ax(['special-selectors.html', '--locate', 'Special id']).out)[0]
+  expect(idHit.selector).toBe(String.raw`main > section#panel\:1`)
+  expect(ax(['special-selectors.html', idHit.selector, '--count']).out).toBe('1')
+})
+
 test('extract: --md produces readable markdown', () => {
   const r = ax(['page.html', '--md'])
   expect(r.out).toContain('# Guide')
