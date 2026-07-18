@@ -217,13 +217,13 @@ export async function readSource(
     const cached = Bun.file(join(FETCH_CACHE, key))
     const fresh = options?.fresh ?? process.argv.includes('--fresh')
     const hasCustomHeaders = Object.keys(options?.headers ?? {}).length > 0
-    // A non-GET method, a body, or a disabled TLS check makes this request
-    // too unlike a plain page view to share the URL-keyed cache — same
-    // reasoning as hasCustomHeaders above.
+    // A non-GET method or a body makes this request too unlike a plain page
+    // view to share the URL-keyed cache — same reasoning as hasCustomHeaders
+    // above. -k is not disqualifying here: reading a cache entry that was
+    // itself written by a verified fetch is safe regardless of -k (see the
+    // write-side check below, which is where -k actually matters).
     const hasRequestOverrides =
-      (options?.method !== undefined && options.method !== 'GET') ||
-      options?.body !== undefined ||
-      options?.tls !== undefined
+      (options?.method !== undefined && options.method !== 'GET') || options?.body !== undefined
     const noCache =
       (options?.noCache ?? process.argv.includes('--no-cache')) ||
       hasCustomHeaders ||
@@ -247,7 +247,7 @@ export async function readSource(
         method: options?.method,
         body: options?.body,
         signal: AbortSignal.timeout(g.timeoutMs),
-        ...(options?.tls !== undefined ? { tls: options.tls } : {}),
+        tls: options?.tls,
       })
       if (!res.ok) fail(`fetch failed: ${res.status} ${res.statusText} for ${src}`)
       body = await readBodyCapped(res, g.maxBytes, deadline)
@@ -265,8 +265,10 @@ export async function readSource(
     // Only complete bodies are cached — a capped or aborted read must never
     // be served later as if it were the real page. Servers that say
     // no-store, credential-bearing URLs, and --no-cache all skip the disk.
+    // -k also skips writing: an unverified TLS body must never be handed
+    // back later to a normal, verified fetch of the same URL.
     const noStore = (res.headers.get('cache-control') ?? '').toLowerCase().includes('no-store')
-    if (!noCache && !noStore && !hasSensitiveQuery(src)) {
+    if (!noCache && !noStore && !hasSensitiveQuery(src) && options?.tls === undefined) {
       await cacheWrite(key, text)
     }
     return text

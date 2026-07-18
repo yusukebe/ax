@@ -41,8 +41,9 @@ discover (unknown page? never dump raw HTML):
   --count            how many elements match <selector>
   parse-mode URLs are cached ~2min so probing is free (hits announced;
   --fresh = refetch then re-cache, --no-cache = never touch the disk;
-  Cache-Control: no-store, credential-bearing URLs, and requests with -H/-u
-  are never cached)
+  Cache-Control: no-store, credential-bearing URLs, requests with -H/-u,
+  and non-GET/-d requests are never cached; -k may read the cache but
+  never writes it)
 
 extract (selector — CSS, structured):
   --row 'title=a, href=a@href, level=.cefr'   structured rows (@attr reads
@@ -309,7 +310,7 @@ async function curlRequestInit(
 ): Promise<{
   method: string
   body: string | ArrayBuffer | undefined
-  tls?: { rejectUnauthorized: boolean }
+  tls: { rejectUnauthorized: boolean } | undefined
 }> {
   const body = await resolveData(flags)
   if (
@@ -326,10 +327,20 @@ async function curlRequestInit(
         : body !== undefined
           ? 'POST'
           : 'GET'
+  // fetch() forbids a body on GET/HEAD — fail with a structured error instead
+  // of letting Bun's TypeError leak a raw stack trace to the agent. The hint
+  // names the flag the user actually typed (-I also implies HEAD).
+  if (body !== undefined && (method === 'GET' || method === 'HEAD')) {
+    const culprit = typeof flags.method === 'string' ? `-X ${method}` : '-I'
+    fail(
+      `-d cannot be sent with ${method}`,
+      `fetch() forbids GET/HEAD bodies; drop ${culprit} or use -X POST`
+    )
+  }
   return {
     method,
     body,
-    ...(flags.insecure === true ? { tls: { rejectUnauthorized: false } } : {}),
+    tls: flags.insecure === true ? { rejectUnauthorized: false } : undefined,
   }
 }
 
@@ -405,7 +416,7 @@ export async function root(argv: string[]) {
         headers,
         body: data,
         signal: AbortSignal.timeout(guards.timeoutMs),
-        ...(tls !== undefined ? { tls } : {}),
+        tls,
       })
     } catch (e) {
       timeoutError(e, guards.timeoutMs)
@@ -580,7 +591,35 @@ export async function root(argv: string[]) {
   // --- parse mode ---
   // -X/-d/-k are curl reflexes too; parse mode gets the same request shape
   // as fetch mode, just handed to readSource instead of fetch() directly.
+  // For file/stdin sources there is no request to shape them into — say so
+  // rather than dropping them silently.
   const requestInit = isUrl ? await curlRequestInit(flags, headers) : null
+  if (!isUrl) {
+    const ignored = [
+      typeof flags.method === 'string' ? '-X' : null,
+      typeof flags.data === 'string' ||
+      typeof flags['data-raw'] === 'string' ||
+      typeof flags['data-binary'] === 'string'
+        ? '-d'
+        : null,
+      flags.insecure === true ? '-k' : null,
+      flags.head === true ? '-I' : null,
+    ].filter(Boolean)
+    if (ignored.length > 0) {
+      process.stderr.write(
+        `ax: note: ${ignored.join('/')} ignored — ${src} is not a URL, nothing is fetched\n`
+      )
+    }
+  }
+  // A HEAD response has no body to parse — never-silent means we note the
+  // downgrade instead of quietly parsing nothing (and every selector failing).
+  // "treating as", not "fetching with": the GET may be served from the cache.
+  if (requestInit?.method === 'HEAD') {
+    requestInit.method = 'GET'
+    process.stderr.write(
+      'ax: note: HEAD has no body to parse — treating as GET (drop the selector to see headers)\n'
+    )
+  }
   const { document } = parseHTML(
     await readSource(src, {
       ...guardsFromFlags(flags),
