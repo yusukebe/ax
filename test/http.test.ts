@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 const ENTRY = join(import.meta.dir, '..', 'src', 'index.ts')
 let server: ReturnType<typeof Bun.serve>
 let dataDir: string
+let parseEchoHits = 0
 
 // Shift_JIS bytes for "こんにちは世界" — can't be produced with TextEncoder
 // (UTF-8 only), so the raw bytes are spelled out here.
@@ -108,6 +109,18 @@ beforeAll(() => {
         )
       if (url.pathname === '/echo-bytes')
         return req.arrayBuffer().then((bytes) => new Response(bytes))
+      if (url.pathname === '/parse-echo') {
+        parseEchoHits++
+        return req
+          .text()
+          .then(
+            (body) =>
+              new Response(
+                `<html><body><p class="method">${req.method}</p><p class="body">${body}</p></body></html>`,
+                { headers: { 'content-type': 'text/html' } }
+              )
+          )
+      }
       if (url.pathname === '/auth') return new Response(req.headers.get('authorization') ?? 'none')
       if (url.pathname === '/header-page') {
         if (req.headers.get('x-api-key') !== 'parse-secret')
@@ -357,6 +370,31 @@ test('parse mode forwards basic auth', async () => {
   const r = await ax([`http://localhost:${server.port}/basic-page`, '.secret', '-u', 'user:pass'])
   expect(r.code).toBe(0)
   expect(r.out).toBe('basic access')
+})
+
+test('parse mode forwards -X: method reaches the server and the page still parses', async () => {
+  const r = await ax([`http://localhost:${server.port}/parse-echo`, '.method', '-X', 'POST'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('POST')
+})
+
+test('parse mode forwards -d: body reaches the server and implies POST', async () => {
+  const url = `http://localhost:${server.port}/parse-echo`
+  const body = await ax([url, '.body', '-d', 'hello'])
+  expect(body.code).toBe(0)
+  expect(body.out).toBe('hello')
+  const method = await ax([url, '.method', '-d', 'hello'])
+  expect(method.out).toBe('POST')
+})
+
+test('parse mode: -d requests bypass the URL cache', async () => {
+  const url = `http://localhost:${server.port}/parse-echo`
+  const before = parseEchoHits
+  const first = await ax([url, '.body', '-d', 'x'])
+  const second = await ax([url, '.body', '-d', 'x'])
+  expect(first.err).not.toContain('cached fetch')
+  expect(second.err).not.toContain('cached fetch')
+  expect(parseEchoHits - before).toBe(2)
 })
 
 test('curl reflexes: no-op flags accepted silently, -o saves body', async () => {

@@ -21,6 +21,9 @@ export type FetchGuards = {
 
 export type ReadSourceOptions = FetchGuards & {
   headers?: Record<string, string>
+  method?: string
+  body?: string | ArrayBuffer
+  tls?: { rejectUnauthorized: boolean }
 }
 
 export function guardsFromFlags(flags: Record<string, unknown>): Required<FetchGuards> {
@@ -214,7 +217,17 @@ export async function readSource(
     const cached = Bun.file(join(FETCH_CACHE, key))
     const fresh = options?.fresh ?? process.argv.includes('--fresh')
     const hasCustomHeaders = Object.keys(options?.headers ?? {}).length > 0
-    const noCache = (options?.noCache ?? process.argv.includes('--no-cache')) || hasCustomHeaders
+    // A non-GET method, a body, or a disabled TLS check makes this request
+    // too unlike a plain page view to share the URL-keyed cache — same
+    // reasoning as hasCustomHeaders above.
+    const hasRequestOverrides =
+      (options?.method !== undefined && options.method !== 'GET') ||
+      options?.body !== undefined ||
+      options?.tls !== undefined
+    const noCache =
+      (options?.noCache ?? process.argv.includes('--no-cache')) ||
+      hasCustomHeaders ||
+      hasRequestOverrides
     if (
       !fresh &&
       !noCache &&
@@ -231,7 +244,10 @@ export async function readSource(
     try {
       res = await fetch(src, {
         headers: options?.headers,
+        method: options?.method,
+        body: options?.body,
         signal: AbortSignal.timeout(g.timeoutMs),
+        ...(options?.tls !== undefined ? { tls: options.tls } : {}),
       })
       if (!res.ok) fail(`fetch failed: ${res.status} ${res.statusText} for ${src}`)
       body = await readBodyCapped(res, g.maxBytes, deadline)

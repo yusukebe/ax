@@ -299,6 +299,40 @@ async function resolveData(
   return undefined
 }
 
+// The curl-parity request bits (-X/-d/-k) shared by fetch mode and parse
+// mode: resolve the body, fill in a default content-type when a body has
+// none, infer the method, and translate -k into Bun's fetch tls option.
+// Mutates headers in place (matching resolveData's existing call site).
+async function curlRequestInit(
+  flags: Record<string, unknown>,
+  headers: Record<string, string>
+): Promise<{
+  method: string
+  body: string | ArrayBuffer | undefined
+  tls?: { rejectUnauthorized: boolean }
+}> {
+  const body = await resolveData(flags)
+  if (
+    body !== undefined &&
+    !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')
+  ) {
+    headers['content-type'] = 'application/x-www-form-urlencoded'
+  }
+  const method =
+    typeof flags.method === 'string'
+      ? flags.method.toUpperCase()
+      : flags.head === true
+        ? 'HEAD'
+        : body !== undefined
+          ? 'POST'
+          : 'GET'
+  return {
+    method,
+    body,
+    ...(flags.insecure === true ? { tls: { rejectUnauthorized: false } } : {}),
+  }
+}
+
 export async function root(argv: string[]) {
   const { _, flags } = parseArgs(argv, {
     help: { type: 'boolean' },
@@ -360,21 +394,7 @@ export async function root(argv: string[]) {
 
   // --- fetch mode: curl parity, structured, never silent ---
   if (isUrl && !parseFlags) {
-    const data = await resolveData(flags)
-    if (
-      data !== undefined &&
-      !Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')
-    ) {
-      headers['content-type'] = 'application/x-www-form-urlencoded'
-    }
-    const method =
-      typeof flags.method === 'string'
-        ? flags.method.toUpperCase()
-        : flags.head === true
-          ? 'HEAD'
-          : data !== undefined
-            ? 'POST'
-            : 'GET'
+    const { method, body: data, tls } = await curlRequestInit(flags, headers)
     const guards = guardsFromFlags(flags)
     const deadline = Date.now() + guards.timeoutMs
     const started = performance.now()
@@ -385,7 +405,7 @@ export async function root(argv: string[]) {
         headers,
         body: data,
         signal: AbortSignal.timeout(guards.timeoutMs),
-        ...(flags.insecure === true ? { tls: { rejectUnauthorized: false } } : {}),
+        ...(tls !== undefined ? { tls } : {}),
       })
     } catch (e) {
       timeoutError(e, guards.timeoutMs)
@@ -558,7 +578,16 @@ export async function root(argv: string[]) {
   }
 
   // --- parse mode ---
-  const { document } = parseHTML(await readSource(src, { ...guardsFromFlags(flags), headers }))
+  // -X/-d/-k are curl reflexes too; parse mode gets the same request shape
+  // as fetch mode, just handed to readSource instead of fetch() directly.
+  const requestInit = isUrl ? await curlRequestInit(flags, headers) : null
+  const { document } = parseHTML(
+    await readSource(src, {
+      ...guardsFromFlags(flags),
+      headers,
+      ...(requestInit ?? {}),
+    })
+  )
   const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
 
   // JS-shell diagnosis: a 200 with an SPA husk is the sneakiest "success".
