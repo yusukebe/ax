@@ -158,6 +158,40 @@ test('cap: default limit with stderr note', () => {
   expect(r.err).toContain('hidden')
 })
 
+test('cap: truncation note names the resume offset and --offset continues without overlap', () => {
+  const first = ax(['many.html', '.x', '--limit', '4'])
+  expect(first.out.split('\n')).toEqual(['i0', 'i1', 'i2', 'i3'])
+  expect(first.err).toContain('continue with --offset 4')
+  const second = ax(['many.html', '.x', '--limit', '4', '--offset', '4'])
+  expect(second.out.split('\n')).toEqual(['i4', 'i5', 'i6', 'i7'])
+  expect(second.err).toContain('continue with --offset 8')
+  const tail = ax(['many.html', '.x', '--offset', '56'])
+  expect(tail.out.split('\n')).toEqual(['i56', 'i57', 'i58', 'i59'])
+  expect(tail.err).not.toContain('hidden')
+})
+
+test('cap: --offset past the end is announced, never silent', () => {
+  const r = ax(['many.html', '.x', '--offset', '999'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('')
+  expect(r.err).toContain('past the end')
+  expect(r.err).toContain('60 result(s) exist')
+})
+
+test('cap: --budget truncation resumes exactly where the note said', () => {
+  const all = ax(['many.html', '.x', '--all']).out.split('\n')
+  const first = ax(['many.html', '.x', '--budget', '10'])
+  expect(first.err).toContain('continue with --offset')
+  const resume = first.err.match(/continue with --offset (\d+)/)![1]!
+  const rest = ax(['many.html', '.x', '--offset', resume, '--all'])
+  expect([...first.out.split('\n'), ...rest.out.split('\n')]).toEqual(all)
+})
+
+test('cap: --offset applies to JSON rows too', () => {
+  const r = ax(['page.html', '.card', '--row', 'title=a', '--json', '--offset', '1'])
+  expect(JSON.parse(r.out)).toEqual([{ title: 'Two' }])
+})
+
 test('0 rows after --where is announced, never silent', () => {
   writeFileSync(
     join(dir, 'zero.html'),
