@@ -116,6 +116,184 @@ test('extract: --md converts <a> inside <p>, <li>, <blockquote>, <th>, <td> to [
   expect(r.out).toContain('[Alice](/alice)')
 })
 
+test('extract: --md captures bare text nodes and unwrapped divs', () => {
+  const html =
+    '<html><body>Just some raw text. <div>A div with text but not p/li/etc</div></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Just some raw text.\n\nA div with text but not p/li/etc')
+})
+
+test('extract: --md captures unwrapped inline elements', () => {
+  const html = '<html><body><span>x</span> <a href="/y">y link</a></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('x [y link](/y)')
+})
+
+test('extract: --md does not duplicate a <p> wrapped in a <div>', () => {
+  const html = '<html><body><div><p>Only once.</p></div></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Only once.')
+})
+
+test('extract: --md skips <script> text inside an inline element', () => {
+  const html = '<html><body><span>price <script>var x=1;</script>here</span></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('price here')
+})
+
+test('extract: --md skips <script> text inside a <p>', () => {
+  const html = '<html><body><p>hi<script>var x=1;</script> there</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('hi there')
+})
+
+test('extract: --md walks block content nested inside an inline wrapper (link card)', () => {
+  const html = '<html><body><a href="/x"><h3>Card Title</h3><p>Card desc</p></a></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('### Card Title\n\nCard desc')
+})
+
+test('extract: --md keeps del/ins text inline as a single sentence', () => {
+  const html =
+    '<html><body>We removed <del>old text</del> and added <ins>new text</ins> today.</body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('We removed old text and added new text today.')
+})
+
+test('extract: --md drops <select>/<option> content', () => {
+  const html =
+    '<html><body><p>Pick one:</p><select><option>Alpha</option><option>Beta</option></select></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Pick one:')
+})
+
+test('extract: --md drops <head>/<title> content in a bare fragment', () => {
+  const html = '<head><title>My Title</title></head><p>hi</p>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('hi')
+})
+
+test('extract: --md ignores blocks hidden inside skip tags when classifying inline wrappers', () => {
+  const html =
+    '<html><body>Hello <span>world<noscript><p>enable JS</p></noscript></span>!</body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Hello world!')
+})
+
+test('extract: --md drops <button> labels', () => {
+  const html =
+    '<html><body><div><button>Accept all cookies</button></div><p>Real content</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Real content')
+})
+
+test('extract: --md drops media fallback text and <template> content', () => {
+  const html =
+    '<html><body><p>Watch:</p><video>Your browser does not support video.</video><span>see <template>tpl inline</template> here</span></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Watch:\n\nsee here')
+})
+
+test('extract: --md does not duplicate nested table rows', () => {
+  const html =
+    '<html><body><table><tr><td>outer<table><tr><td>nested</td></tr></table></td></tr></table></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('outer nested')
+})
+
+test('extract: --md keeps the href of a styled block link', () => {
+  const html = '<html><body>See <a href="/x"><div>Guide</div></a> now</body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('See\n\n[Guide](/x)\n\nnow')
+})
+
+test('extract: --md separates adjacent blocks rendered in an inline context', () => {
+  const html =
+    '<html><body><table><tr><td><p>alpha</p><p>beta</p></td><td>x</td></tr></table><ul><li>item<ul><li>nested</li></ul></li></ul></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('alpha beta | x\n\n- item nested')
+})
+
+test('extract: --md keeps structure of a link wrapping a heading or table', () => {
+  const html =
+    '<html><body><a href="#sec"><h2>Section Title</h2></a><a href="/r"><table><tr><td>Q1</td><td>100</td></tr></table></a></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('## Section Title\n\nQ1 | 100')
+})
+
+test('extract: --md flattens a block link despite skip-tag siblings or inline wrappers', () => {
+  const html =
+    '<html><body>See <a href="/x"><svg viewBox="0 0 1 1"></svg><div>Guide</div></a> and <a href="/y"><span><div>Docs</div></span></a> now</body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('See\n\n[Guide](/x)\n\nand\n\n[Docs](/y)\n\nnow')
+})
+
+test('extract: --md labels a link whose only content is a widget', () => {
+  const html = '<html><body><p>Click <a href="/x"><button>Buy</button></a> now</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Click [Buy](/x) now')
+})
+
+test('extract: --md renders img alt text', () => {
+  const html =
+    '<html><body><p>See <img alt="architecture diagram" src="/d.png"> here</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('See ![architecture diagram](/d.png) here')
+})
+
+test('extract: --md prunes <script> inside <pre> but keeps whitespace', () => {
+  const html = '<html><body><pre>run this <script>track()</script>done</pre></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('```\nrun this done\n```')
+})
+
+test('extract: --md labels an icon link from <svg><title>', () => {
+  const html =
+    '<html><body><p>foo <a href="/x"><svg><title>Icon label</title></svg></a> bar</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('foo [Icon label](/x) bar')
+})
+
+test('extract: --md keeps words separated around dropped widgets', () => {
+  const html =
+    '<html><body><p>Press<button>OK</button>to continue</p>Choose<select><option>A</option></select>from the list</body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Press to continue\n\nChoose from the list')
+})
+
+test('extract: --md maps <br> to a space in rescued link labels', () => {
+  const html =
+    '<html><body><p>Click <a href="/x"><button>Buy<br>now</button></a> please</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Click [Buy now](/x) please')
+})
+
+test('extract: --md moves link-label boundary whitespace outside the brackets', () => {
+  const html = '<html><body><p>Get <a href="/x">the guide </a>now</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Get [the guide](/x) now')
+})
+
+test('extract: --md omits unlabelable links instead of emitting [](url)', () => {
+  const html = '<html><body><p>Click <a href="/x"><img src="/icon.png"></a> now</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('Click now')
+})
+
+test('extract: --md drops all-empty table rows', () => {
+  const html =
+    '<html><body><table><tr><td></td><td></td></tr><tr><td>a</td><td>b</td></tr></table></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('a | b')
+})
+
+test('extract: --md emits <caption> and skips empty tables', () => {
+  const html =
+    '<html><body><p>before</p><table></table><table><caption>Stats table</caption><tr><td>x</td></tr></table><p>after</p></body></html>'
+  const r = ax(['-', '--md'], html)
+  expect(r.out).toBe('before\n\nStats table\n\nx\n\nafter')
+})
+
 test('extract: --count and --attr', () => {
   expect(ax(['page.html', '.card', '--count']).out).toBe('2')
   expect(ax(['page.html', '.card a', '--attr', 'href']).out.split('\n')).toEqual([
