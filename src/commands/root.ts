@@ -347,6 +347,14 @@ async function curlRequestInit(
   }
 }
 
+function isJsonContentType(value: string | null): boolean {
+  const mediaType = ((value ?? '').split(';', 1)[0] ?? '').trim().toLowerCase()
+  const slash = mediaType.indexOf('/')
+  if (slash === -1) return false
+  const subtype = mediaType.slice(slash + 1)
+  return subtype === 'json' || subtype.endsWith('+json')
+}
+
 export async function root(argv: string[]) {
   const { _, flags } = parseArgs(argv, {
     help: { type: 'boolean' },
@@ -548,7 +556,7 @@ export async function root(argv: string[]) {
     const truncated = raw.length > maxChars
     const bodyText = truncated ? raw.slice(0, maxChars) : raw
     let body: unknown = bodyText
-    if ((res.headers.get('content-type') ?? '').includes('json') && !truncated) {
+    if (isJsonContentType(res.headers.get('content-type')) && !truncated) {
       try {
         body = JSON.parse(bodyText)
       } catch {

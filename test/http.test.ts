@@ -89,6 +89,14 @@ beforeAll(() => {
     fetch(req) {
       const url = new URL(req.url)
       if (url.pathname === '/json') return Response.json({ users: [{ name: 'a' }] })
+      if (url.pathname === '/problem-json')
+        return new Response('{"kind":"problem"}', {
+          headers: { 'content-type': 'Application/Problem+JSON; Charset=UTF-8' },
+        })
+      if (url.pathname === '/not-json')
+        return new Response('{"kind":"text"}', {
+          headers: { 'content-type': 'application/notjson' },
+        })
       if (url.pathname === '/redirect')
         return new Response(null, { status: 302, headers: { location: '/json' } })
       if (url.pathname === '/redirect-error')
@@ -203,6 +211,16 @@ test('http: JSON body is parsed and pipeable', async () => {
   expect(rep.redirected).toBe(false)
   expect(rep.body.users[0].name).toBe('a')
   expect(typeof rep.ms).toBe('number')
+})
+
+test('http: JSON media types are matched case-insensitively', async () => {
+  const r = await ax([`http://localhost:${server.port}/problem-json`])
+  expect(JSON.parse(r.out).body).toEqual({ kind: 'problem' })
+})
+
+test('http: non-JSON media types containing json stay as text', async () => {
+  const r = await ax([`http://localhost:${server.port}/not-json`])
+  expect(JSON.parse(r.out).body).toBe('{"kind":"text"}')
 })
 
 test('redirects: structured reports expose the final URL', async () => {
