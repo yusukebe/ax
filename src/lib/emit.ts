@@ -4,10 +4,16 @@ const DEFAULT_LIMIT = 50
 // Rough chars-per-token estimate for --budget (opts.budget is in tokens).
 const CHARS_PER_TOKEN = 4
 
-type EmitOpts = { limit?: number; all?: boolean; budget?: number }
+type EmitOpts = { limit?: number; all?: boolean; budget?: number; offset?: number }
 
-function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number) {
-  let shown = items
+type CapResult<T> = { shown: T[]; dropped: number; resume: number; pastEnd: number | null }
+
+function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapResult<T> {
+  const offset = opts.offset && opts.offset > 0 ? opts.offset : 0
+  if (offset >= items.length && offset > 0) {
+    return { shown: [], dropped: 0, resume: 0, pastEnd: items.length }
+  }
+  let shown = offset > 0 ? items.slice(offset) : items
   if (!opts.all) {
     const limit = opts.limit ?? DEFAULT_LIMIT
     if (shown.length > limit) shown = shown.slice(0, limit)
@@ -23,13 +29,23 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number) {
     }
     shown = shown.slice(0, i)
   }
-  return { shown, dropped: items.length - shown.length }
+  return {
+    shown,
+    dropped: items.length - offset - shown.length,
+    resume: offset + shown.length,
+    pastEnd: null,
+  }
 }
 
-function note(dropped: number) {
-  if (dropped > 0) {
+// Truncation is never silent — and the note names the exact --offset to
+// continue from, so a follow-up call fetches only what wasn't shown instead
+// of re-emitting everything under a bigger budget.
+function note(r: CapResult<unknown>) {
+  if (r.pastEnd !== null) {
+    process.stderr.write(`ax: note: --offset is past the end — only ${r.pastEnd} result(s) exist\n`)
+  } else if (r.dropped > 0) {
     process.stderr.write(
-      `ax: note: ${dropped} more result(s) hidden (use --all, --limit N, or --budget T)\n`
+      `ax: note: ${r.dropped} more result(s) hidden — continue with --offset ${r.resume} (or --all, --limit N, --budget T)\n`
     )
   }
 }
@@ -57,9 +73,9 @@ export function sanitizeLine(s: string): { text: string; removed: number } {
 }
 
 export function emitLines(items: string[], opts: EmitOpts = {}) {
-  const { shown, dropped } = cap(items, opts, (s) => s.length + 1)
+  const r = cap(items, opts, (s) => s.length + 1)
   let stripped = 0
-  const safe = shown.map((line) => {
+  const safe = r.shown.map((line) => {
     const { text, removed } = sanitizeLine(line)
     stripped += removed
     return text
@@ -68,14 +84,14 @@ export function emitLines(items: string[], opts: EmitOpts = {}) {
   if (stripped > 0) {
     process.stderr.write(`ax: note: stripped ${stripped} control character(s) from output\n`)
   }
-  note(dropped)
+  note(r)
 }
 
 export function emitJson(value: unknown, opts: EmitOpts = {}) {
   if (Array.isArray(value)) {
-    const { shown, dropped } = cap(value, opts, (v) => JSON.stringify(v).length + 4)
-    process.stdout.write(JSON.stringify(shown, null, 2) + '\n')
-    note(dropped)
+    const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
+    process.stdout.write(JSON.stringify(r.shown, null, 2) + '\n')
+    note(r)
   } else {
     process.stdout.write(JSON.stringify(value, null, 2) + '\n')
   }

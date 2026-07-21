@@ -132,6 +132,7 @@ export async function emitQueryResult(
     limit: num(flags.limit, 50),
     all: flags.all === true,
     budget: num(flags.budget, 0),
+    offset: num(flags.offset, 0),
   }
 
   if (flags.shape) return void process.stdout.write(shapeOf(result) + '\n')
@@ -208,6 +209,7 @@ export const queryFlagDefs = {
   freq: { type: 'boolean' },
   tsv: { type: 'boolean' },
   limit: { type: 'string' },
+  offset: { type: 'string' },
   where: { type: 'string' },
   pick: { type: 'string' },
   budget: { type: 'string' },

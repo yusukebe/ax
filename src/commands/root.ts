@@ -58,6 +58,9 @@ output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
   --limit <n> (default 50)   --all
   --budget <t>       cap output at ~t tokens; truncation is never silent
+  --offset <n>       skip the first n results — truncation notes name the
+                     exact --offset to continue from, and the URL cache makes
+                     the follow-up free (no refetch, no re-read overlap)
 
 examples:
   ax https://site.example '.item > a' --row 'title=, href=@href'
@@ -364,6 +367,7 @@ export async function root(argv: string[]) {
     locate: { type: 'string' },
     where: { type: 'string' },
     limit: { type: 'string' },
+    offset: { type: 'string' },
     budget: { type: 'string' },
     method: { type: 'string', short: 'X' },
     header: { type: 'string', short: 'H', multiple: true },
@@ -393,6 +397,7 @@ export async function root(argv: string[]) {
     limit: num(flags.limit, 50),
     all: flags.all === true,
     budget: num(flags.budget, 0),
+    offset: num(flags.offset, 0),
   }
   const isUrl = /^https?:\/\//.test(src!)
   const headers = isUrl ? requestHeaders(flags) : {}
