@@ -11,7 +11,7 @@ import {
   decodeBody,
   type CappedBody,
 } from '../lib/io'
-import { emitLines, emitJson } from '../lib/emit'
+import { emitLines, emitJson, writeStdoutFlushed } from '../lib/emit'
 import { compileWhere } from '../lib/expr'
 import { toTsv } from '../lib/query'
 
@@ -666,7 +666,7 @@ export async function root(argv: string[]) {
       // curl parity again: -f never saves the error document — whatever sat
       // at the -o path before stays untouched.
       if (flags.fail === true && !res.ok) {
-        process.stdout.write(
+        await writeStdoutFlushed(
           JSON.stringify(
             {
               status: res.status,
@@ -727,7 +727,7 @@ export async function root(argv: string[]) {
           `download failed: ${(e as Error).message} (existing file at ${flags.output} untouched)`
         )
       }
-      process.stdout.write(
+      await writeStdoutFlushed(
         JSON.stringify(
           {
             status: res.status,
@@ -754,7 +754,7 @@ export async function root(argv: string[]) {
     // cap (downloads are still bounded by --max-bytes). Anything unusual is
     // announced on stderr so the pipe never lies by omission.
     if (flags.body === true) {
-      if (capped.bytes.byteLength > 0) process.stdout.write(capped.bytes)
+      if (capped.bytes.byteLength > 0) await writeStdoutFlushed(capped.bytes)
       if (res.redirected) process.stderr.write(`ax: note: redirected to ${res.url}\n`)
       if (!res.ok) process.stderr.write(`ax: note: HTTP ${res.status} ${res.statusText}\n`)
       if (capped.bytes.byteLength === 0) process.stderr.write('ax: note: empty body\n')
@@ -788,7 +788,7 @@ export async function root(argv: string[]) {
         else omitted++
       }
     }
-    process.stdout.write(
+    await writeStdoutFlushed(
       JSON.stringify(
         {
           status: res.status,

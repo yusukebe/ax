@@ -103,6 +103,13 @@ beforeAll(() => {
         return new Response(null, { status: 302, headers: { location: '/nope' } })
       if (url.pathname === '/empty') return new Response('')
       if (url.pathname === '/big') return new Response('x'.repeat(10000))
+      // Past the 64KB kernel pipe buffer — catches output dropped by an
+      // exit that doesn't wait for stdout to drain.
+      if (url.pathname === '/huge') return new Response('h'.repeat(300_000))
+      if (url.pathname === '/huge-json')
+        return Response.json({
+          rows: Array.from({ length: 6000 }, (_, i) => ({ id: i, name: `row-${i}` })),
+        })
       if (url.pathname === '/exact-limit') return new Response('x'.repeat(EXACT_LIMIT))
       if (url.pathname === '/binary') return new Response(BINARY_BODY)
       if (url.pathname === '/echo')
@@ -571,6 +578,27 @@ test('--body: body only on stdout, uncapped, notes on stderr', async () => {
   expect(empty.err).toContain('empty body')
   const failed = await ax([`http://localhost:${server.port}/nope`, '--body', '-f'])
   expect(failed.code).toBe(22)
+})
+
+// A real shell pipe (`ax … | wc -c`) is the faithful repro for exit-before-
+// drain truncation: the harness's own Bun.spawn pipes are drained eagerly by
+// the test process and can mask it (issue #44 — exactly 65536 bytes arrived).
+async function axPipedTo(args: string[], sink: string): Promise<string> {
+  const cmd = `bun "${ENTRY}" ${args.map((a) => `"${a}"`).join(' ')} 2>/dev/null | ${sink}`
+  const proc = Bun.spawn(['bash', '-c', cmd], { stdout: 'pipe' })
+  return (await new Response(proc.stdout).text()).trim()
+}
+
+test('--body: bodies past the 64KB pipe buffer arrive complete through a real pipe', async () => {
+  const out = await axPipedTo([`http://localhost:${server.port}/huge`, '--body'], 'wc -c')
+  expect(parseInt(out, 10)).toBe(300_000)
+})
+
+test('fetch report: reports past the 64KB pipe buffer arrive complete through a real pipe', async () => {
+  const out = await axPipedTo([`http://localhost:${server.port}/huge-json`, '--all'], 'cat')
+  const rep = JSON.parse(out)
+  expect(rep.body.rows).toHaveLength(6000)
+  expect(rep.body.rows[5999].name).toBe('row-5999')
 })
 
 test('--body preserves response bytes for binary pipes', async () => {
