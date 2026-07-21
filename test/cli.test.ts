@@ -150,6 +150,18 @@ test('unknown flag warns instead of silently ignoring', () => {
   expect(r.err).toContain('unknown flag --raw')
 })
 
+test('unknown one-character flags preserve short and long spelling', () => {
+  const short = ax(['page.html', '.card', '-Z'])
+  expect(short.code).toBe(0)
+  expect(short.out).not.toBe('')
+  expect(short.err).toContain('unknown flag -Z ignored')
+  expect(short.err).not.toContain('unknown flag --Z')
+
+  const long = ax(['page.html', '.card', '--x'])
+  expect(long.code).toBe(0)
+  expect(long.err).toContain('unknown flag --x ignored')
+})
+
 test('cap: default limit with stderr note', () => {
   const many = `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
   writeFileSync(join(dir, 'many.html'), many)
