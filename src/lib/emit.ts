@@ -72,6 +72,15 @@ export function sanitizeLine(s: string): { text: string; removed: number } {
   return { text, removed: s.length - text.length }
 }
 
+// process.exit() discards stdout data still sitting in the write queue —
+// when stdout is a pipe, anything past the 64KB kernel buffer is silently
+// dropped. Every stdout write followed by an explicit exit must be awaited
+// through this, so `ax … --body | jq` gets the whole body. (Parse mode
+// exits naturally, so its writes drain on their own.)
+export function writeStdoutFlushed(data: string | Uint8Array): Promise<void> {
+  return new Promise((resolve) => process.stdout.write(data, () => resolve()))
+}
+
 export function emitLines(items: string[], opts: EmitOpts = {}) {
   const r = cap(items, opts, (s) => s.length + 1)
   let stripped = 0
