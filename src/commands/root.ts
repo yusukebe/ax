@@ -188,46 +188,248 @@ function selectorPath(el: Element): string {
   return parts.join(' > ')
 }
 
-// --md: readable main content as markdown — the docs-reading path.
-// Convert inline content to markdown, turning <a> into [text](url).
-function inlineToMd(el: Element): string {
-  let out = ''
-  const walkNode = (node: Element) => {
-    for (const child of node.childNodes) {
-      if (child.nodeType === 3) {
-        out += (child as Text).data
-        continue
-      }
-      if (child.nodeType !== 1) continue
-      const ce = child as Element
-      if (ce.localName === 'a') {
-        const href = ce.getAttribute('href') ?? ''
-        const inner = inlineToMd(ce)
-        out += href ? `[${inner}](${href})` : inner
-      } else if (ce.localName === 'br') {
-        out += ' '
-      } else {
-        walkNode(ce)
-      }
+// Tag semantics for --md, built from disjoint tiers: each tag is listed
+// exactly once, and the subset relations (zero-footprint ⊂ invisible ⊂
+// skip, structured ⊂ block) hold by construction.
+
+// display:none in a real browser — dropped without leaving a gap on
+// screen, so no separating space either.
+const ZERO_FOOTPRINT_TAGS = new Set([
+  'script',
+  'style',
+  'noscript',
+  'template',
+  'head',
+  'title',
+  'datalist',
+  'option',
+])
+// Occupy space on screen but render no text usable as content or a link
+// label: replaced/embedded content, plus form fields whose text (option
+// lists, typed values) never reads as prose. Dropping one leaves a space.
+const REPLACED_TAGS = new Set([
+  'svg',
+  'select',
+  'textarea',
+  'video',
+  'audio',
+  'object',
+  'canvas',
+  'iframe',
+])
+// Page chrome and widgets whose text is visible on screen but isn't
+// content: dropped from flowing prose, still usable as a link's label.
+const WIDGET_TAGS = new Set(['nav', 'header', 'footer', 'aside', 'form', 'button'])
+
+// Never renders visible text in a browser — excluded from link-label rescue.
+const INVISIBLE_TAGS = new Set([...ZERO_FOOTPRINT_TAGS, ...REPLACED_TAGS])
+// Elements whose text (and descendants) never belong in readable output.
+const SKIP_TAGS = new Set([...INVISIBLE_TAGS, ...WIDGET_TAGS])
+
+// Structure markdown can't express inside a link label. A block-promoted
+// <a href> wrapping none of these flattens to [text](url) so the href
+// survives; one wrapping any of them recurses as blocks instead, trading
+// the href for the structure.
+const STRUCTURED_TAGS = new Set([
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'pre',
+  'table',
+  'blockquote',
+  'ul',
+  'ol',
+  'dl',
+])
+// Block-level elements per HTML's default display; everything else —
+// including unknown/custom tags — defaults to inline, matching browsers.
+const BLOCK_TAGS = new Set([
+  ...STRUCTURED_TAGS,
+  'p',
+  'li',
+  'div',
+  'dt',
+  'dd',
+  'section',
+  'article',
+  'main',
+  'figure',
+  'figcaption',
+  'details',
+  'summary',
+  'dialog',
+  'fieldset',
+  'hr',
+  'address',
+  'hgroup',
+  'menu',
+  'center',
+])
+
+// Exported for the tag-tier invariant test.
+export const MD_TAG_TIERS = {
+  zeroFootprint: ZERO_FOOTPRINT_TAGS,
+  replaced: REPLACED_TAGS,
+  widget: WIDGET_TAGS,
+  structured: STRUCTURED_TAGS,
+  block: BLOCK_TAGS,
+}
+
+// Does el contain a descendant whose tag is in `tags`? SKIP_TAGS subtrees
+// are pruned so hidden markup (a <p> inside <noscript>, form internals)
+// can't affect the answer; the optional memo keeps the overall walk linear
+// on deeply nested markup.
+function hasDescendantIn(
+  el: Element,
+  tags: Set<string>,
+  cache?: WeakMap<Element, boolean>
+): boolean {
+  const cached = cache?.get(el)
+  if (cached !== undefined) return cached
+  let found = false
+  for (const child of el.children) {
+    if (SKIP_TAGS.has(child.localName)) continue
+    if (tags.has(child.localName) || hasDescendantIn(child, tags, cache)) {
+      found = true
+      break
     }
   }
-  walkNode(el)
+  cache?.set(el, found)
+  return found
+}
+
+const blockDescendantCache = new WeakMap<Element, boolean>()
+const hasBlockDescendant = (el: Element) => hasDescendantIn(el, BLOCK_TAGS, blockDescendantCache)
+
+const hasStructuredContent = (el: Element) => hasDescendantIn(el, STRUCTURED_TAGS)
+
+// Text a browser would actually show for el — used to rescue a link label
+// when the normal skip leaves nothing (e.g. <a><button>Buy</button></a>).
+function visibleText(el: Element): string {
+  let out = ''
+  for (const child of el.childNodes) {
+    if (child.nodeType === 3) out += (child as Text).data
+    if (child.nodeType !== 1) continue
+    const ce = child as Element
+    if (ce.localName === 'br') {
+      out += ' '
+    } else if (ce.localName === 'svg') {
+      // An icon's accessible name (<svg><title>) is the label a screen
+      // reader announces — use it before giving up on the link text.
+      out += (ce.querySelector('title')?.textContent ?? '') || ' '
+    } else if (INVISIBLE_TAGS.has(ce.localName)) {
+      if (!ZERO_FOOTPRINT_TAGS.has(ce.localName)) out += ' '
+    } else {
+      out += ce.localName === 'img' ? (ce.getAttribute('alt') ?? '') : visibleText(ce)
+    }
+  }
+  return out
+}
+
+// A link's markdown label: its inline rendering, or — when the normal skip
+// leaves nothing — any text a browser would actually show (button labels,
+// svg titles, img alt).
+const linkLabel = (el: Element) => collapse(inlineToMd(el)) || collapse(visibleText(el))
+
+// Text of a <pre> with SKIP_TAGS subtrees pruned but whitespace preserved —
+// textContent would leak <script>/<style> source into the code fence.
+function rawText(el: Element): string {
+  let out = ''
+  for (const child of el.childNodes) {
+    if (child.nodeType === 3) out += (child as Text).data
+    else if (child.nodeType === 1 && !SKIP_TAGS.has((child as Element).localName))
+      out += rawText(child as Element)
+  }
+  return out
+}
+
+// HTML table model, shared by --md and --table: rows and cells nested in an
+// inner table belong to that table, not the one being read.
+const directRows = (table: Element) =>
+  [...table.querySelectorAll('tr')].filter((tr) => tr.closest('table') === table)
+const directCells = (tr: Element) =>
+  [...tr.children].filter((c) => c.localName === 'th' || c.localName === 'td')
+
+// --md: readable main content as markdown — the docs-reading path.
+// Convert a single inline-context node to markdown, turning <a> into
+// [text](url) and skipping SKIP_TAGS content wherever it appears.
+function inlineNodeToMd(node: Node): string {
+  if (node.nodeType === 3) return (node as Text).data
+  if (node.nodeType !== 1) return ''
+  const el = node as Element
+  // A dropped widget still separates the words around it on screen
+  // (Press<button>OK</button>to continue), so it becomes a space, which
+  // collapse() later folds into the surrounding whitespace.
+  if (SKIP_TAGS.has(el.localName)) return ZERO_FOOTPRINT_TAGS.has(el.localName) ? '' : ' '
+  if (el.localName === 'a') {
+    const raw = inlineToMd(el)
+    const label = linkLabel(el)
+    const href = el.getAttribute('href') ?? ''
+    // No label anywhere (icon-only link with no alt/title): emit the raw
+    // inline text rather than [](url) litter, matching the block branch.
+    if (!href || !label) return raw
+    // Boundary whitespace stays outside the brackets so a label like
+    // "the guide " doesn't glue the link to the following word.
+    const lead = /^\s/.test(raw) ? ' ' : ''
+    const trail = /\s$/.test(raw) ? ' ' : ''
+    return `${lead}[${label}](${href})${trail}`
+  }
+  if (el.localName === 'br') return ' '
+  if (el.localName === 'img') {
+    const alt = el.getAttribute('alt') ?? ''
+    const src = el.getAttribute('src') ?? ''
+    return alt && src && !src.startsWith('data:') ? `![${alt}](${src})` : alt
+  }
+  // Pad block-level children so adjacent blocks rendered in an inline
+  // context (<td><p>a</p><p>b</p></td>, nested table cells) don't fuse
+  // into one word.
+  const inner = inlineToMd(el)
+  const isBlockish =
+    BLOCK_TAGS.has(el.localName) ||
+    ['tr', 'td', 'th', 'caption', 'thead', 'tbody', 'tfoot'].includes(el.localName)
+  return isBlockish ? ` ${inner} ` : inner
+}
+
+function inlineToMd(el: Element): string {
+  let out = ''
+  for (const child of el.childNodes) out += inlineNodeToMd(child)
   return out
 }
 
 function toMarkdown(root: Element): string {
   const out: string[] = []
-  const walk = (el: Element, depth: number) => {
-    for (const child of el.children) {
-      const tag = child.localName
-      if (
-        ['script', 'style', 'nav', 'header', 'footer', 'aside', 'noscript', 'svg', 'form'].includes(
-          tag
-        )
-      )
+  const walk = (el: Element) => {
+    let inline = ''
+    const flush = () => {
+      const text = collapse(inline)
+      if (text) out.push(text)
+      inline = ''
+    }
+    for (const child of el.childNodes) {
+      if (child.nodeType === 3) {
+        inline += (child as Text).data
         continue
+      }
+      if (child.nodeType !== 1) continue
+      const ce = child as Element
+      const tag = ce.localName
+      if (SKIP_TAGS.has(tag)) {
+        if (!ZERO_FOOTPRINT_TAGS.has(tag)) inline += ' '
+        continue
+      }
+      // Inline elements join the surrounding text run — unless they contain
+      // a block-level descendant, in which case they're walked as blocks so
+      // nested headings/paragraphs don't get fused into one line.
+      if (!BLOCK_TAGS.has(tag) && !hasBlockDescendant(ce)) {
+        inline += inlineNodeToMd(ce)
+        continue
+      }
+      flush()
       if (/^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li' || tag === 'blockquote') {
-        const text = collapse(inlineToMd(child))
+        const text = collapse(inlineToMd(ce))
         if (/^h[1-6]$/.test(tag) && text) {
           out.push(`${'#'.repeat(Number(tag[1]))} ${text}`)
         } else if (tag === 'p' && text) {
@@ -237,26 +439,39 @@ function toMarkdown(root: Element): string {
         } else if (tag === 'blockquote' && text) {
           out.push(`> ${text}`)
         } else {
-          walk(child, depth + 1)
+          walk(ce)
         }
       } else if (tag === 'pre') {
-        out.push('```\n' + (child.textContent ?? '').trim() + '\n```')
+        out.push('```\n' + rawText(ce).trim() + '\n```')
       } else if (tag === 'table') {
-        const rows = [...child.querySelectorAll('tr')].map((tr) =>
-          [...tr.querySelectorAll('th, td')].map((c) => collapse(inlineToMd(c))).join(' | ')
-        )
-        out.push(rows.join('\n'))
+        const caption = [...ce.children].find((c) => c.localName === 'caption')
+        const capText = caption ? collapse(inlineToMd(caption)) : ''
+        if (capText) out.push(capText)
+        const table = directRows(ce)
+          .map((tr) => directCells(tr).map((c) => collapse(inlineToMd(c))))
+          .filter((cells) => cells.some((c) => c !== ''))
+          .map((cells) => cells.join(' | '))
+          .join('\n')
+        if (table) out.push(table)
+      } else if (tag === 'a' && ce.getAttribute('href') && !hasStructuredContent(ce)) {
+        // A styled block link (<a href><div>Download</div></a>): flatten to
+        // [text](url) so the href isn't silently lost. Links wrapping
+        // structured content still recurse below.
+        const text = linkLabel(ce)
+        if (text) out.push(`[${text}](${ce.getAttribute('href')})`)
+        else walk(ce)
       } else {
-        walk(child, depth + 1)
+        walk(ce)
       }
     }
+    flush()
   }
   const main =
     root.querySelector('article') ??
     root.querySelector('main') ??
     root.querySelector('body') ??
     root
-  walk(main as Element, 0)
+  walk(main as Element)
   return out.join('\n\n')
 }
 
@@ -718,12 +933,9 @@ export async function root(argv: string[]) {
     // Grid construction per the HTML table model: expand colspan/rowspan,
     // ignore rows of nested tables, consume leading all-<th> rows as header.
     const parse = (table: Element) => {
-      const allRows = [...table.querySelectorAll('tr')].filter(
-        (tr) => tr.closest('table') === table
-      )
+      const allRows = directRows(table)
       if (allRows.length === 0) return { headers: [], rows: [] as Record<string, string | null>[] }
-      const cellsOf = (tr: Element) =>
-        [...tr.children].filter((c) => c.localName === 'th' || c.localName === 'td')
+      const cellsOf = directCells
       const grid: (string | undefined)[][] = allRows.map(() => [])
       allRows.forEach((tr, r) => {
         let c = 0
