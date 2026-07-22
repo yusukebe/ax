@@ -4,12 +4,19 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
+    bun2nix = {
+      url = "github:nix-community/bun2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs = { nixpkgs, flake-utils, bun2nix, ... }:
+    # bun2nix only ships for these systems; notably x86_64-darwin is out
+    # (nixpkgs 26.05 is its last supported release anyway).
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        bun2nix' = bun2nix.packages.${system}.default;
 
         version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
@@ -23,57 +30,32 @@
           ];
         };
 
-        # Production deps only: no devDependencies means no platform-specific
-        # optional binaries (e.g. oxfmt), so this is identical across systems.
-        bunDeps = pkgs.stdenvNoCC.mkDerivation {
-          pname = "ax-bun-deps";
-          inherit version src;
-
-          nativeBuildInputs = [ pkgs.bun ];
-          dontConfigure = true;
-
-          buildPhase = ''
-            runHook preBuild
-            export HOME="$TMPDIR"
-            bun install --frozen-lockfile --production --ignore-scripts
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            mkdir -p $out
-            cp -r node_modules $out/node_modules
-          '';
-
-          outputHashMode = "recursive";
-          outputHash = "sha256-EX6ItcE7zlM71JTbFsavuiRMFa1KS1svcaKwzQL6ZjI=";
-        };
-
-        ax = pkgs.stdenvNoCC.mkDerivation {
+        ax = bun2nix'.writeBunApplication {
           pname = "ax";
           inherit version src;
 
-          nativeBuildInputs = [ pkgs.makeWrapper ];
-          dontConfigure = true;
-          dontBuild = true;
+          bunDeps = bun2nix'.fetchBunDeps {
+            bunNix = ./nix/bun.nix;
+          };
 
-          installPhase = ''
-            mkdir -p $out/share/ax $out/bin
-            cp -r src $out/share/ax/src
-            cp package.json $out/share/ax/package.json
-            cp -r ${bunDeps}/node_modules $out/share/ax/node_modules
-            makeWrapper ${pkgs.bun}/bin/bun $out/bin/ax \
-              --add-flags "run $out/share/ax/src/index.ts"
-          '';
+          # The published bin is src/index.ts run under bun — no bundle step.
+          dontUseBunBuild = true;
+          dontUseBunCheck = true;
+          # Same as the hook's per-platform defaults, plus --production to keep
+          # devDependencies out of the runtime closure.
+          bunInstallFlags = [ "--linker=isolated" "--production" ]
+            ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
+          # postinstall regenerates bun.nix, which is pointless (and fails) in
+          # the sandbox.
+          dontRunLifecycleScripts = true;
 
-          doInstallCheck = true;
-          installCheckPhase = ''
-            $out/bin/ax --version | grep -Fxq "${version}"
+          startScript = ''
+            bun run src/index.ts "$@"
           '';
 
           meta = with pkgs.lib; {
             description = "The AI-era curl: fetch, discover, extract. One command.";
             homepage = "https://github.com/yusukebe/ax";
-            downloadPage = "https://github.com/yusukebe/ax/releases";
             license = licenses.mit;
             mainProgram = "ax";
           };
