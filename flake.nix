@@ -46,6 +46,7 @@
           dontUnpack = true;
           dontConfigure = true;
           dontBuild = true;
+          dontStrip = true;
 
           nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [
             pkgs.autoPatchelfHook
@@ -58,6 +59,11 @@
 
           installPhase = ''
             install -Dm755 $src $out/bin/ax
+          '';
+
+          doInstallCheck = true;
+          installCheckPhase = ''
+            $out/bin/ax --version | grep -Fxq "${version}"
           '';
 
           meta = with pkgs.lib; {
