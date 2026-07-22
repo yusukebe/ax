@@ -6,59 +6,63 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }@inputs:
+  outputs = { nixpkgs, flake-utils, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        version = "0.1.21";
+        version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
 
-        assets = {
-          "x86_64-linux" = {
-            file = "ax-linux-x64";
-            sha256 = "09gnggg14lc5ximyn6rs9djns0lp5d2d1xaxagq277x5ikapjb3w";
-          };
-          "aarch64-linux" = {
-            file = "ax-linux-arm64";
-            sha256 = "063jizgymp3sd86sixjd44rjqyv0yhqrbrwsi768djcsky5y6f09";
-          };
-          "x86_64-darwin" = {
-            file = "ax-darwin-x64";
-            sha256 = "17lrx38b45y3j1885pq6w60p98kznrmh6rngvgn8r16pcm7mw8si";
-          };
-          "aarch64-darwin" = {
-            file = "ax-darwin-arm64";
-            sha256 = "19wgw4sa16bp458y6hf9qv233596ys1fws91kjybi5mwq7sdfckj";
-          };
+        src = pkgs.lib.fileset.toSource {
+          root = ./.;
+          fileset = pkgs.lib.fileset.unions [
+            ./package.json
+            ./bun.lock
+            ./tsconfig.json
+            ./src
+          ];
         };
 
-        asset = assets.${system} or (throw "Unsupported platform: ${system}");
+        # Production deps only: no devDependencies means no platform-specific
+        # optional binaries (e.g. oxfmt), so this is identical across systems.
+        bunDeps = pkgs.stdenvNoCC.mkDerivation {
+          pname = "ax-bun-deps";
+          inherit version src;
 
-        ax = pkgs.stdenv.mkDerivation {
-          pname = "ax";
-          inherit version;
-
-          src = pkgs.fetchurl {
-            url = "https://github.com/yusukebe/ax/releases/download/v${version}/${asset.file}";
-            sha256 = asset.sha256;
-          };
-
-          dontUnpack = true;
+          nativeBuildInputs = [ pkgs.bun ];
           dontConfigure = true;
-          dontBuild = true;
-          dontStrip = true;
 
-          nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [
-            pkgs.autoPatchelfHook
-          ];
-
-          buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [
-            pkgs.stdenv.cc.cc.lib
-            pkgs.stdenv.cc.libc
-          ];
+          buildPhase = ''
+            runHook preBuild
+            export HOME="$TMPDIR"
+            bun install --frozen-lockfile --production --ignore-scripts
+            runHook postBuild
+          '';
 
           installPhase = ''
-            install -Dm755 $src $out/bin/ax
+            mkdir -p $out
+            cp -r node_modules $out/node_modules
+          '';
+
+          outputHashMode = "recursive";
+          outputHash = "sha256-EX6ItcE7zlM71JTbFsavuiRMFa1KS1svcaKwzQL6ZjI=";
+        };
+
+        ax = pkgs.stdenvNoCC.mkDerivation {
+          pname = "ax";
+          inherit version src;
+
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+          dontConfigure = true;
+          dontBuild = true;
+
+          installPhase = ''
+            mkdir -p $out/share/ax $out/bin
+            cp -r src $out/share/ax/src
+            cp package.json $out/share/ax/package.json
+            cp -r ${bunDeps}/node_modules $out/share/ax/node_modules
+            makeWrapper ${pkgs.bun}/bin/bun $out/bin/ax \
+              --add-flags "run $out/share/ax/src/index.ts"
           '';
 
           doInstallCheck = true;
@@ -72,8 +76,6 @@
             downloadPage = "https://github.com/yusukebe/ax/releases";
             license = licenses.mit;
             mainProgram = "ax";
-            platforms = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-            sourceProvenance = [ sourceTypes.binaryNativeCode ];
           };
         };
       in
