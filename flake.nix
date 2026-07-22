@@ -86,14 +86,6 @@
     {
       inherit packages;
 
-      apps = forAllSystems (system: rec {
-        ax = {
-          type = "app";
-          program = lib.getExe packages.${system}.ax;
-        };
-        default = ax;
-      });
-
       checks = forAllSystems (system: {
         build = packages.${system}.ax;
       });
