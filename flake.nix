@@ -46,7 +46,6 @@
 
           # The published bin is src/index.ts run under bun — no bundle step.
           dontUseBunBuild = true;
-          dontUseBunCheck = true;
           # Same as the hook's per-platform defaults, plus --production to keep
           # devDependencies out of the runtime closure.
           bunInstallFlags = [ "--linker=isolated" "--production" ]
