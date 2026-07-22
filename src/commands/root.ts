@@ -617,10 +617,10 @@ export async function root(argv: string[]) {
 
   const [src, selector] = _
   const opts = {
-    limit: num(flags.limit, 50),
+    limit: num(flags.limit, 50, { flag: '--limit', kind: 'positive integer', fail }),
     all: flags.all === true,
-    budget: num(flags.budget, 0),
-    offset: num(flags.offset, 0),
+    budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
+    offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
   const isUrl = /^https?:\/\//.test(src!)
   const headers = isUrl ? requestHeaders(flags) : {}

@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { chmod, mkdir, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { num } from './args'
 
 // Explore-then-extract means the same URL gets probed many times in a row;
 // re-downloading it every probe wastes seconds per turn. Short-TTL cache.
@@ -27,11 +28,20 @@ export type ReadSourceOptions = FetchGuards & {
 }
 
 export function guardsFromFlags(flags: Record<string, unknown>): Required<FetchGuards> {
-  const mb = typeof flags['max-bytes'] === 'string' ? Number(flags['max-bytes']) : NaN
-  const mt = typeof flags['max-time'] === 'string' ? Number(flags['max-time']) * 1000 : NaN
+  const maxBytes = num(flags['max-bytes'], DEFAULT_MAX_BYTES, {
+    flag: '--max-bytes',
+    kind: 'positive integer',
+    fail,
+  })
+  const timeoutMs =
+    num(flags['max-time'], DEFAULT_TIMEOUT_MS / 1000, {
+      flag: '-m/--max-time',
+      kind: 'positive number',
+      fail,
+    }) * 1000
   return {
-    maxBytes: Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_MAX_BYTES,
-    timeoutMs: Number.isFinite(mt) && mt > 0 ? mt : DEFAULT_TIMEOUT_MS,
+    maxBytes,
+    timeoutMs,
     fresh: flags.fresh === true,
     noCache: flags['no-cache'] === true,
   }
