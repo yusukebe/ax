@@ -3,34 +3,37 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
-    flake-utils.url = "github:numtide/flake-utils";
     bun2nix = {
       url = "github:nix-community/bun2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
-  outputs = { nixpkgs, flake-utils, bun2nix, ... }:
-    # bun2nix only ships for these systems; notably x86_64-darwin is out
-    # (nixpkgs 26.05 is its last supported release anyway).
-    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-        bun2nix' = bun2nix.packages.${system}.default;
+  outputs = { nixpkgs, bun2nix, ... }:
+    let
+      inherit (nixpkgs) lib;
 
-        version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
+      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      forAllSystems = lib.genAttrs systems;
 
-        src = pkgs.lib.fileset.toSource {
-          root = ./.;
-          fileset = pkgs.lib.fileset.unions [
-            ./package.json
-            ./bun.lock
-            ./tsconfig.json
-            ./src
-          ];
-        };
+      axFor = system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          bun2nix' = bun2nix.packages.${system}.default;
 
-        ax = pkgs.stdenvNoCC.mkDerivation {
+          version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
+
+          src = lib.fileset.toSource {
+            root = ./.;
+            fileset = lib.fileset.unions [
+              ./package.json
+              ./bun.lock
+              ./tsconfig.json
+              ./src
+            ];
+          };
+        in
+        pkgs.stdenvNoCC.mkDerivation {
           pname = "ax";
           inherit version src;
 
@@ -46,7 +49,7 @@
           # Same as the hook's per-platform defaults, plus --production to keep
           # devDependencies out of the runtime closure.
           bunInstallFlags = [ "--linker=isolated" "--production" ]
-            ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
           # postinstall regenerates bun.nix, which is pointless (and fails) in
           # the sandbox.
           dontRunLifecycleScripts = true;
@@ -70,41 +73,41 @@
             $out/bin/ax --version | grep -Fxq "${version}"
           '';
 
-          meta = with pkgs.lib; {
+          meta = with lib; {
             description = "The AI-era curl: fetch, discover, extract. One command.";
             homepage = "https://github.com/yusukebe/ax";
             license = licenses.mit;
             mainProgram = "ax";
           };
         };
-      in
-      {
-        packages = {
-          ax = ax;
-          default = ax;
-        };
 
-        apps = {
-          ax = {
-            type = "app";
-            program = "${ax}/bin/ax";
-          };
-          default = {
-            type = "app";
-            program = "${ax}/bin/ax";
-          };
-        };
+      packages = forAllSystems (system: rec {
+        ax = axFor system;
+        default = ax;
+      });
+    in
+    {
+      inherit packages;
 
-        checks = {
-          build = ax;
+      apps = forAllSystems (system: rec {
+        ax = {
+          type = "app";
+          program = lib.getExe packages.${system}.ax;
         };
+        default = ax;
+      });
 
-        devShells.default = pkgs.mkShellNoCC {
+      checks = forAllSystems (system: {
+        build = packages.${system}.ax;
+      });
+
+      devShells = forAllSystems (system: {
+        default = nixpkgs.legacyPackages.${system}.mkShellNoCC {
           packages = [
-            pkgs.bun
-            bun2nix'
+            nixpkgs.legacyPackages.${system}.bun
+            bun2nix.packages.${system}.default
           ];
         };
-      }
-    );
+      });
+    };
 }
