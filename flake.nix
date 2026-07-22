@@ -30,9 +30,11 @@
           ];
         };
 
-        ax = bun2nix'.writeBunApplication {
+        ax = pkgs.stdenvNoCC.mkDerivation {
           pname = "ax";
           inherit version src;
+
+          nativeBuildInputs = [ bun2nix'.hook ];
 
           bunDeps = bun2nix'.fetchBunDeps {
             bunNix = ./nix/bun.nix;
@@ -49,8 +51,23 @@
           # the sandbox.
           dontRunLifecycleScripts = true;
 
-          startScript = ''
-            bun run src/index.ts "$@"
+          installPhase = ''
+            runHook preInstall
+
+            mkdir -p $out/share/ax $out/bin
+            cp -r src node_modules package.json $out/share/ax/
+
+            substituteInPlace $out/share/ax/src/index.ts \
+              --replace-fail "#!/usr/bin/env bun" "#!${pkgs.bun}/bin/bun"
+            chmod +x $out/share/ax/src/index.ts
+            ln -s $out/share/ax/src/index.ts $out/bin/ax
+
+            runHook postInstall
+          '';
+
+          doInstallCheck = true;
+          installCheckPhase = ''
+            $out/bin/ax --version | grep -Fxq "${version}"
           '';
 
           meta = with pkgs.lib; {
