@@ -9,14 +9,20 @@
     };
   };
 
-  outputs = { nixpkgs, bun2nix, ... }:
+  outputs =
+    { nixpkgs, bun2nix, ... }:
     let
       inherit (nixpkgs) lib;
 
-      systems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
       forAllSystems = lib.genAttrs systems;
 
-      axFor = system:
+      axFor =
+        system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           bun2nix' = bun2nix.packages.${system}.default;
@@ -47,8 +53,11 @@
           dontUseBunBuild = true;
           # Same as the hook's per-platform defaults, plus --production to keep
           # devDependencies out of the runtime closure.
-          bunInstallFlags = [ "--linker=isolated" "--production" ]
-            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
+          bunInstallFlags = [
+            "--linker=isolated"
+            "--production"
+          ]
+          ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
           # postinstall regenerates bun.nix, which is pointless (and fails) in
           # the sandbox.
           dontRunLifecycleScripts = true;
