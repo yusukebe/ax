@@ -19,7 +19,7 @@ let
   };
 in
 stdenvNoCC.mkDerivation {
-  pname = "ax";
+  pname = packageJson.name;
   inherit (packageJson) version;
   inherit src;
 
