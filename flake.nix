@@ -37,6 +37,8 @@
     {
       inherit packages;
 
+      formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
       checks = forAllSystems (system: {
         build = packages.${system}.ax;
       });
