@@ -30,8 +30,30 @@ export function parseArgs(argv: string[], options: Options) {
   return { _: positionals, flags: values as Record<string, string | boolean | undefined> }
 }
 
-export function num(v: string | boolean | undefined, fallback: number): number {
-  if (typeof v !== 'string') return fallback
+type NumConstraint = {
+  flag: string
+  kind: 'positive integer' | 'non-negative integer' | 'positive number'
+  fail: (message: string) => never
+}
+
+export function num(v: unknown, fallback: number, constraint?: NumConstraint): number {
+  if (typeof v !== 'string') {
+    if (constraint && v !== undefined) {
+      constraint.fail(`${constraint.flag} expects a ${constraint.kind}, got no value`)
+    }
+    return fallback
+  }
   const n = Number(v)
+  if (constraint) {
+    const valid =
+      v.trim() !== '' &&
+      Number.isFinite(n) &&
+      (constraint.kind === 'positive number'
+        ? n > 0
+        : Number.isInteger(n) && (constraint.kind === 'positive integer' ? n > 0 : n >= 0))
+    if (!valid) {
+      constraint.fail(`${constraint.flag} expects a ${constraint.kind}, got "${v}"`)
+    }
+  }
   return Number.isFinite(n) ? n : fallback
 }

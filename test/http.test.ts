@@ -495,6 +495,55 @@ test('guard: endless stream stops at --max-bytes, announced in-band', async () =
   expect(rep.status).toBe(200)
 })
 
+test('guard flags reject invalid explicit values', async () => {
+  const url = `http://localhost:${server.port}/json`
+  const cases: [string, string, string][] = [
+    ['-m', 'nope', 'a positive number'],
+    ['-m', '', 'a positive number'],
+    ['-m', '0', 'a positive number'],
+    ['-m', '-1', 'a positive number'],
+    ['-m', 'Infinity', 'a positive number'],
+    ['--max-time', 'nope', 'a positive number'],
+    ['--max-bytes', 'nope', 'a positive integer'],
+    ['--max-bytes', '', 'a positive integer'],
+    ['--max-bytes', '0', 'a positive integer'],
+    ['--max-bytes', '-1', 'a positive integer'],
+    ['--max-bytes', '1.5', 'a positive integer'],
+    ['--max-bytes', 'Infinity', 'a positive integer'],
+  ]
+
+  for (const [flag, value, expected] of cases) {
+    const r = await ax([url, flag, value])
+    const display = flag === '-m' || flag === '--max-time' ? '-m/--max-time' : flag
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toBe(`ax: error: ${display} expects ${expected}, got "${value}"`)
+  }
+})
+
+test('guard flags reject missing values', async () => {
+  const url = `http://localhost:${server.port}/json`
+  const cases: [string, string][] = [
+    ['-m', 'a positive number'],
+    ['--max-time', 'a positive number'],
+    ['--max-bytes', 'a positive integer'],
+  ]
+
+  for (const [flag, expected] of cases) {
+    const r = await ax([url, flag])
+    const display = flag === '--max-bytes' ? flag : '-m/--max-time'
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toBe(`ax: error: ${display} expects ${expected}, got no value`)
+  }
+})
+
+test('guard flags preserve valid fractional timeouts', async () => {
+  const r = await ax([`http://localhost:${server.port}/json`, '-m', '0.5'])
+  expect(r.code).toBe(0)
+  expect(JSON.parse(r.out).status).toBe(200)
+})
+
 test('guard: an exact --max-bytes response is accepted in fetch, parse, and -o modes', async () => {
   const url = `http://localhost:${server.port}/exact-limit`
   const fetched = await ax([url, '--all', '--max-bytes', String(EXACT_LIMIT)])

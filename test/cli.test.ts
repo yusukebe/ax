@@ -340,6 +340,64 @@ test('unknown one-character flags preserve short and long spelling', () => {
   expect(long.err).toContain('unknown flag --x ignored')
 })
 
+test('numeric output flags reject invalid explicit values', () => {
+  const cases: [string, string, string][] = [
+    ['--limit', 'nope', 'a positive integer'],
+    ['--limit', '', 'a positive integer'],
+    ['--limit', '0', 'a positive integer'],
+    ['--limit', '-1', 'a positive integer'],
+    ['--limit', '1.5', 'a positive integer'],
+    ['--limit', 'Infinity', 'a positive integer'],
+    ['--offset', 'nope', 'a non-negative integer'],
+    ['--offset', '', 'a non-negative integer'],
+    ['--offset', '-1', 'a non-negative integer'],
+    ['--offset', '1.5', 'a non-negative integer'],
+    ['--offset', 'Infinity', 'a non-negative integer'],
+    ['--budget', 'nope', 'a positive integer'],
+    ['--budget', '', 'a positive integer'],
+    ['--budget', '0', 'a positive integer'],
+    ['--budget', '-1', 'a positive integer'],
+    ['--budget', '1.5', 'a positive integer'],
+    ['--budget', 'Infinity', 'a positive integer'],
+  ]
+
+  for (const [flag, value, expected] of cases) {
+    const r = ax(['page.html', '.card', flag, value])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toBe(`ax: error: ${flag} expects ${expected}, got "${value}"`)
+  }
+})
+
+test('numeric output flags reject missing values', () => {
+  const cases: [string, string][] = [
+    ['--limit', 'a positive integer'],
+    ['--offset', 'a non-negative integer'],
+    ['--budget', 'a positive integer'],
+  ]
+
+  for (const [flag, expected] of cases) {
+    const r = ax(['page.html', '.card', flag])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toBe(`ax: error: ${flag} expects ${expected}, got no value`)
+  }
+})
+
+test('numeric output flags preserve valid boundary values', () => {
+  const limit = ax(['page.html', '.card', '--limit', '1'])
+  expect(limit.code).toBe(0)
+  expect(limit.out).toBe('One boldA1')
+
+  const offset = ax(['page.html', '.card', '--offset', '0'])
+  expect(offset.code).toBe(0)
+  expect(offset.out.split('\n')).toHaveLength(2)
+
+  const budget = ax(['page.html', '.card', '--budget', '1'])
+  expect(budget.code).toBe(0)
+  expect(budget.out).toBe('One boldA1')
+})
+
 test('cap: default limit with stderr note', () => {
   const many = `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
   writeFileSync(join(dir, 'many.html'), many)
