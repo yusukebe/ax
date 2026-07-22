@@ -21,7 +21,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
           bun2nix' = bun2nix.packages.${system}.default;
 
-          version = (builtins.fromJSON (builtins.readFile ./package.json)).version;
+          packageJson = builtins.fromJSON (builtins.readFile ./package.json);
+          inherit (packageJson) version;
 
           src = lib.fileset.toSource {
             root = ./.;
@@ -73,11 +74,10 @@
             $out/bin/ax --version | grep -Fxq "${version}"
           '';
 
-          meta = with lib; {
-            description = "The AI-era curl: fetch, discover, extract. One command.";
-            homepage = "https://github.com/yusukebe/ax";
-            license = licenses.mit;
-            mainProgram = "ax";
+          meta = {
+            inherit (packageJson) description homepage;
+            license = lib.getLicenseFromSpdxId packageJson.license;
+            mainProgram = builtins.head (builtins.attrNames packageJson.bin);
           };
         };
 

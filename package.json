@@ -3,6 +3,7 @@
   "version": "0.1.21",
   "description": "The AI-era curl: fetch, discover, extract. One command.",
   "license": "MIT",
+  "homepage": "https://github.com/yusukebe/ax",
   "author": "Yusuke Wada <yusuke@kamawada.com>",
   "type": "module",
   "private": true,
