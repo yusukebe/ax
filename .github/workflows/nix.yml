@@ -51,8 +51,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # access-tokens keeps GitHub tarball fetches off the anonymous rate limit.
       - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
+        with:
+          github_access_token: ${{ github.token }}
+          nix_conf: |
+            access-tokens = github.com=${{ github.token }}
+
 
       - name: nix flake check --all-systems
         run: nix flake check --all-systems --no-build
