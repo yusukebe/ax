@@ -29,7 +29,6 @@
             fileset = lib.fileset.unions [
               ./package.json
               ./bun.lock
-              ./tsconfig.json
               ./src
             ];
           };

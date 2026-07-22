@@ -13,7 +13,6 @@ on:
       - '**/*.nix'
       - 'bun.lock'
       - 'package.json'
-      - 'tsconfig.json'
       - 'src/**'
       - '.github/workflows/nix.yml'
   pull_request:
@@ -24,7 +23,6 @@ on:
       - '**/*.nix'
       - 'bun.lock'
       - 'package.json'
-      - 'tsconfig.json'
       - 'src/**'
       - '.github/workflows/nix.yml'
   workflow_dispatch:
