@@ -77,10 +77,16 @@
           };
         };
 
-      packages = forAllSystems (system: rec {
-        ax = axFor system;
-        default = ax;
-      });
+      packages = forAllSystems (
+        system:
+        let
+          ax = axFor system;
+        in
+        {
+          inherit ax;
+          default = ax;
+        }
+      );
     in
     {
       inherit packages;
