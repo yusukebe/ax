@@ -21,14 +21,14 @@
       ];
       forAllSystems = lib.genAttrs systems;
 
+      packageJson = builtins.fromJSON (builtins.readFile ./package.json);
+      inherit (packageJson) version;
+
       axFor =
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
           bun2nix' = bun2nix.packages.${system}.default;
-
-          packageJson = builtins.fromJSON (builtins.readFile ./package.json);
-          inherit (packageJson) version;
 
           src = lib.fileset.toSource {
             root = ./.;
