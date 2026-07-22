@@ -107,6 +107,15 @@
             nixpkgs.legacyPackages.${system}.bun
             bun2nix.packages.${system}.default
           ];
+
+          shellHook = ''
+            # Install dependencies only if node_modules is missing or older
+            # than the lockfile
+            if [ ! -d node_modules ] || [ bun.lock -nt node_modules ]; then
+              echo "📦 Installing dependencies..."
+              bun install --frozen-lockfile
+            fi
+          '';
         };
       });
     };
