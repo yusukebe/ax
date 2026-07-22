@@ -8,9 +8,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'flake.nix'
+      - '**.nix'
       - 'flake.lock'
-      - '**/*.nix'
       - 'bun.lock'
       - 'package.json'
       - 'src/**'
@@ -18,9 +17,8 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'flake.nix'
+      - '**.nix'
       - 'flake.lock'
-      - '**/*.nix'
       - 'bun.lock'
       - 'package.json'
       - 'src/**'

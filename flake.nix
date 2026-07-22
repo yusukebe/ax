@@ -21,75 +21,12 @@
       ];
       forAllSystems = lib.genAttrs systems;
 
-      packageJson = builtins.fromJSON (builtins.readFile ./package.json);
-      inherit (packageJson) version;
-
-      axFor =
-        system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          bun2nix' = bun2nix.packages.${system}.default;
-
-          src = lib.fileset.toSource {
-            root = ./.;
-            fileset = lib.fileset.unions [
-              ./package.json
-              ./bun.lock
-              ./src
-            ];
-          };
-        in
-        pkgs.stdenvNoCC.mkDerivation {
-          pname = "ax";
-          inherit version src;
-
-          nativeBuildInputs = [ bun2nix'.hook ];
-
-          bunDeps = bun2nix'.fetchBunDeps {
-            bunNix = ./nix/bun.nix;
-          };
-
-          # The published bin is src/index.ts run under bun — no bundle step.
-          dontUseBunBuild = true;
-          # Same as the hook's per-platform defaults, plus --production to keep
-          # devDependencies out of the runtime closure.
-          bunInstallFlags = [
-            "--linker=isolated"
-            "--production"
-          ]
-          ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
-          # postinstall regenerates bun.nix, which is pointless (and fails) in
-          # the sandbox.
-          dontRunLifecycleScripts = true;
-
-          installPhase = ''
-            runHook preInstall
-
-            mkdir -p $out/share/ax $out/bin
-            cp -r src node_modules package.json $out/share/ax/
-
-            substituteInPlace $out/share/ax/src/index.ts \
-              --replace-fail "#!/usr/bin/env bun" "#!${pkgs.bun}/bin/bun"
-            chmod +x $out/share/ax/src/index.ts
-            ln -s $out/share/ax/src/index.ts $out/bin/ax
-
-            runHook postInstall
-          '';
-
-          doInstallCheck = true;
-          nativeInstallCheckInputs = [ pkgs.versionCheckHook ];
-
-          meta = {
-            inherit (packageJson) description homepage;
-            license = lib.getLicenseFromSpdxId packageJson.license;
-            mainProgram = builtins.head (builtins.attrNames packageJson.bin);
-          };
-        };
-
       packages = forAllSystems (
         system:
         let
-          ax = axFor system;
+          ax = nixpkgs.legacyPackages.${system}.callPackage ./package.nix {
+            bun2nix = bun2nix.packages.${system}.default;
+          };
         in
         {
           inherit ax;
