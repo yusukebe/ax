@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 import agentContext from './agent-context.txt' with { type: 'text' }
+import { version } from './../package.json' with { type: 'json' }
 import { root, rootHelp } from './commands/root'
-
-const VERSION = '0.1.21'
 
 async function main() {
   const argv = process.argv.slice(2)
@@ -13,7 +12,7 @@ async function main() {
     return
   }
   if (first === '--version' || first === '-v') {
-    console.log(VERSION)
+    console.log(version)
     return
   }
   if (first === 'agent-context') {
