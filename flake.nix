@@ -81,6 +81,13 @@
         checks = {
           build = ax;
         };
+
+        devShells.default = pkgs.mkShellNoCC {
+          packages = [
+            pkgs.bun
+            bun2nix'
+          ];
+        };
       }
     );
 }
