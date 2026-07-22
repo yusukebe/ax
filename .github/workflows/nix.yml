@@ -1,15 +1,15 @@
 name: Nix flake
 
-# Validates the flake (flake.nix). For most nixify targets Nix is a side
-# concern, so this job is path-filtered to the flake files — it fires only
-# when they change, not on every source/docs commit.
+# Validates the flake (flake.nix). The package builds from source via
+# bun2nix, so this fires on changes to the flake files and to anything the
+# build consumes (src, lockfiles, nix/bun.nix).
 #
 # Three steps, in order of what they catch:
 #   1. nix flake check --all-systems  — every system's outputs evaluate
 #      (including darwin on an ubuntu runner).
-#   2. nix build .#default            — fetchurl + autoPatchelf + install
-#      layout actually realises for the runner's system.
-#   3. nix run .#default -- --version — the patched binary actually execs.
+#   2. nix build .#default            — the bun2nix dep cache + offline
+#      bun install + wrapper actually realise for the runner's system.
+#   3. nix run .#default -- --version — the wrapped script actually execs.
 #      This is the only step that catches the `let ... in rec` shadowing
 #      class of bug (passes flake check, fails nix run). Do NOT drop it.
 
@@ -20,6 +20,10 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - '**/*.nix'
+      - 'bun.lock'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'src/**'
       - '.github/workflows/nix.yml'
   pull_request:
     branches: [main]
@@ -27,10 +31,11 @@ on:
       - 'flake.nix'
       - 'flake.lock'
       - '**/*.nix'
+      - 'bun.lock'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'src/**'
       - '.github/workflows/nix.yml'
-  # The release workflow's flake bump is committed with GITHUB_TOKEN, which
-  # never triggers push workflows — so the release job dispatches this one
-  # explicitly to validate the bumped flake with a real nix.
   workflow_dispatch:
 
 permissions:
