@@ -69,9 +69,7 @@
           '';
 
           doInstallCheck = true;
-          installCheckPhase = ''
-            $out/bin/ax --version | grep -Fxq "${version}"
-          '';
+          nativeInstallCheckInputs = [ pkgs.versionCheckHook ];
 
           meta = {
             inherit (packageJson) description homepage;
