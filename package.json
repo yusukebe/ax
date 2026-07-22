@@ -15,10 +15,12 @@
     "build": "bun build src/index.ts --compile --outfile ax",
     "test": "bun test",
     "format": "oxfmt --check .",
-    "format:fix": "oxfmt --write ."
+    "format:fix": "oxfmt --write .",
+    "postinstall": "bun2nix -o nix/bun.nix"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "bun2nix": "^2.1.2",
     "oxfmt": "latest"
   },
   "peerDependencies": {
