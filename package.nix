@@ -63,5 +63,6 @@ stdenvNoCC.mkDerivation {
     inherit (packageJson) description homepage;
     license = lib.getLicenseFromSpdxId packageJson.license;
     mainProgram = builtins.head (builtins.attrNames packageJson.bin);
+    platforms = import ./nix/systems.nix;
   };
 }

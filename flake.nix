@@ -14,12 +14,7 @@
     let
       inherit (nixpkgs) lib;
 
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "aarch64-darwin"
-      ];
-      forAllSystems = lib.genAttrs systems;
+      forAllSystems = lib.genAttrs (import ./nix/systems.nix);
 
       packages = forAllSystems (
         system:
