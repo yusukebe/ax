@@ -66,4 +66,3 @@ jobs:
           git add Formula/ax.rb
           git commit -m "ax ${GITHUB_REF_NAME#v}"
           git push
-
