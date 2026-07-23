@@ -1,36 +1,28 @@
 name: Nix flake
 
-# Validates the flake (flake.nix). For most nixify targets Nix is a side
-# concern, so this job is path-filtered to the flake files — it fires only
-# when they change, not on every source/docs commit.
-#
-# Three steps, in order of what they catch:
-#   1. nix flake check --all-systems  — every system's outputs evaluate
-#      (including darwin on an ubuntu runner).
-#   2. nix build .#default            — fetchurl + autoPatchelf + install
-#      layout actually realises for the runner's system.
-#   3. nix run .#default -- --version — the patched binary actually execs.
-#      This is the only step that catches the `let ... in rec` shadowing
-#      class of bug (passes flake check, fails nix run). Do NOT drop it.
+# The `nix run` step looks redundant next to `nix build`, but it is the only
+# step that catches bugs which pass flake check and build yet fail at exec
+# time (e.g. `let ... in rec` shadowing). Do NOT drop it.
 
 on:
   push:
     branches: [main]
     paths:
-      - 'flake.nix'
+      - '**.nix'
       - 'flake.lock'
-      - '**/*.nix'
+      - 'bun.lock'
+      - 'package.json'
+      - 'src/**'
       - '.github/workflows/nix.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'flake.nix'
+      - '**.nix'
       - 'flake.lock'
-      - '**/*.nix'
+      - 'bun.lock'
+      - 'package.json'
+      - 'src/**'
       - '.github/workflows/nix.yml'
-  # The release workflow's flake bump is committed with GITHUB_TOKEN, which
-  # never triggers push workflows — so the release job dispatches this one
-  # explicitly to validate the bumped flake with a real nix.
   workflow_dispatch:
 
 permissions:
@@ -42,8 +34,11 @@ concurrency:
 
 jobs:
   check:
-    name: nix flake check
-    runs-on: ubuntu-latest
+    name: nix flake check (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
       - name: Checkout
@@ -53,6 +48,9 @@ jobs:
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@e50d5f73bfe71c2dd0aa4218de8f4afa59f8f81d # v16
+
+      - name: nix fmt --ci
+        run: nix fmt -- --ci
 
       - name: nix flake check --all-systems
         run: nix flake check --all-systems --no-build

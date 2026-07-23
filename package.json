@@ -3,6 +3,7 @@
   "version": "0.1.21",
   "description": "The AI-era curl: fetch, discover, extract. One command.",
   "license": "MIT",
+  "homepage": "https://github.com/yusukebe/ax",
   "author": "Yusuke Wada <yusuke@kamawada.com>",
   "type": "module",
   "private": true,
@@ -15,10 +16,12 @@
     "build": "bun build src/index.ts --compile --outfile ax",
     "test": "bun test",
     "format": "oxfmt --check .",
-    "format:fix": "oxfmt --write ."
+    "format:fix": "oxfmt --write .",
+    "postinstall": "bun2nix -o nix/bun.nix"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "bun2nix": "^2.1.2",
     "oxfmt": "latest"
   },
   "peerDependencies": {

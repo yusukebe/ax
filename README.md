@@ -33,7 +33,7 @@ Teach your agent: `npx skills add yusukebe/ax` — or have it run `ax agent-cont
 ## Nix
 
 The project provides optional Nix flake outputs for users who already use Nix.
-The flake wraps the prebuilt release binary.
+The flake builds ax from source — see `flake.nix` and `package.nix` for details.
 
 ```bash
 # Run without installing
@@ -42,11 +42,6 @@ nix run github:yusukebe/ax
 # Install into your profile
 nix profile install github:yusukebe/ax
 ```
-
-The flake tracks the default branch; `version` and the per-platform SRI hashes in
-`flake.nix` are bumped at release time. (Release tags are cut before the bump lands,
-so `github:yusukebe/ax/vX.Y.Z` is not a valid pin — use a specific commit SHA if
-you need reproducibility.)
 
 ## Why not htmlq / curl / Firecrawl?
 
