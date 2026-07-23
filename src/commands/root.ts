@@ -56,6 +56,7 @@ extract (selector — CSS, structured):
 
 output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
+  --json-envelope    {data, meta} JSON with state + exact nextOffset for automation
   --limit <n> (default 50)   --all
   --budget <t>       cap output at ~t tokens; truncation is never silent
   --offset <n>       skip the first n results — truncation notes name the
