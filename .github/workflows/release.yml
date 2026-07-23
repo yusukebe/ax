@@ -21,11 +21,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Tag must match the version in the source
+      - name: Tag must match the version in package.json
         run: |
-          v=$(grep -o "const VERSION = '[^']*'" src/index.ts | cut -d"'" -f2)
+          v=$(jq -r .version package.json)
           if [ "v$v" != "$GITHUB_REF_NAME" ]; then
-            echo "src/index.ts VERSION is $v but tag is $GITHUB_REF_NAME" >&2
+            echo "package.json version is $v but tag is $GITHUB_REF_NAME" >&2
             exit 1
           fi
 
