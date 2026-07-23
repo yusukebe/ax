@@ -22,9 +22,7 @@
   "devDependencies": {
     "@types/bun": "latest",
     "bun2nix": "^2.1.2",
-    "oxfmt": "latest"
-  },
-  "peerDependencies": {
+    "oxfmt": "latest",
     "typescript": "^5"
   },
   "dependencies": {
