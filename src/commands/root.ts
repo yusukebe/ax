@@ -627,6 +627,37 @@ export async function root(argv: string[]) {
   const emitStructured = (value: unknown[]) =>
     jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
   const isUrl = /^https?:\/\//.test(src!)
+  const envelopeConflict =
+    flags.md === true
+      ? '--md'
+      : flags.outline === true
+        ? '--outline'
+        : flags.count === true
+          ? '--count'
+          : flags.text === true
+            ? '--text'
+            : flags.html === true
+              ? '--html'
+              : typeof flags.attr === 'string'
+                ? '--attr'
+                : flags.body === true
+                  ? '--body'
+                  : null
+  if (jsonEnvelope && envelopeConflict) {
+    const hint =
+      envelopeConflict === '--md'
+        ? 'markdown continuation is not supported because an offset may split document structure'
+        : 'use --row, --table, --locate, or selector JSON output'
+    fail(`--json-envelope cannot be combined with ${envelopeConflict}`, hint)
+  }
+  const hasEnvelopeOutput =
+    selector !== undefined || flags.table === true || typeof flags.locate === 'string'
+  if (jsonEnvelope && !hasEnvelopeOutput) {
+    fail(
+      '--json-envelope requires structured parse output',
+      'use it with --row, --table, --locate, or a selector; fetch mode already returns JSON'
+    )
+  }
   const headers = isUrl ? requestHeaders(flags) : {}
   const parseFlags =
     selector !== undefined ||
@@ -923,7 +954,7 @@ export async function root(argv: string[]) {
       })
     }
     if (hits.length === 0) fail(`text not found: ${flags.locate}`)
-    return emitJson(hits, opts)
+    return emitStructured(hits)
   }
 
   if (flags.table) {
@@ -983,7 +1014,7 @@ export async function root(argv: string[]) {
     if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
     if (parsed.length === 1) rowStats(parsed[0]!.rows, wherePred ? beforeWhere : undefined)
-    if (flags.json || parsed.length > 1) return emitJson(tableResult, opts)
+    if (jsonEnvelope || flags.json || parsed.length > 1) return emitStructured(tableResult)
     return emitLines(toTsv(tableResult), opts)
   }
 
@@ -1007,7 +1038,7 @@ export async function root(argv: string[]) {
     })
     const rowResult = wherePred ? rows.filter(wherePred) : rows
     rowStats(rowResult, wherePred ? rows.length : undefined)
-    if (flags.json) return emitJson(rowResult, opts)
+    if (jsonEnvelope || flags.json) return emitStructured(rowResult)
     return emitLines(toTsv(rowResult), opts)
   }
 
