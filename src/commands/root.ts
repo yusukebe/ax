@@ -631,14 +631,19 @@ export async function root(argv: string[]) {
     ['--locate', flags.locate],
     ['--where', flags.where],
   ] as const
-  const rawJsonEnvelope = argv.includes('--json-envelope')
-  const jsonEnvelope = flags['json-envelope'] === true || rawJsonEnvelope
+  const jsonEnvelope = flags['json-envelope'] === true
+  const optionsEnd = argv.indexOf('--')
   const missingEnvelopeValue =
-    envelopeModifiers.find(([, value]) => value === true)?.[0] ??
+    (jsonEnvelope ? envelopeModifiers.find(([, value]) => value === true)?.[0] : undefined) ??
     envelopeModifiers.find(([flag]) =>
-      argv.some((arg, index) => arg === '--json-envelope' && argv[index - 1] === flag)
+      argv.some(
+        (arg, index) =>
+          (optionsEnd === -1 || index < optionsEnd) &&
+          arg === '--json-envelope' &&
+          argv[index - 1] === flag
+      )
     )?.[0]
-  if (jsonEnvelope && missingEnvelopeValue) {
+  if (missingEnvelopeValue) {
     fail(
       `${missingEnvelopeValue} requires a value`,
       'pass the modifier value before --json-envelope'

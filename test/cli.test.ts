@@ -38,6 +38,10 @@ beforeAll(() => {
       <table><tr><th>K</th><th>V</th></tr><tr><td>x</td><td>1</td></tr></table>
     </body></html>`
   )
+  writeFileSync(
+    join(dir, 'many.html'),
+    `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
+  )
 })
 
 test('extract: --row defaults to TSV, --json for JSON rows', () => {
@@ -399,8 +403,6 @@ test('numeric output flags preserve valid boundary values', () => {
 })
 
 test('cap: default limit with stderr note', () => {
-  const many = `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
-  writeFileSync(join(dir, 'many.html'), many)
   const r = ax(['many.html', '.x'])
   expect(r.out.split('\n')).toHaveLength(50)
   expect(r.err).toContain('hidden')
@@ -539,6 +541,18 @@ test('json envelope: budget continuation reconstructs the full result', () => {
 test('json envelope: existing --json remains a top-level array', () => {
   const out = JSON.parse(ax(['page.html', '.card', '--json']).out)
   expect(Array.isArray(out)).toBe(true)
+})
+
+test('json envelope: ignores option-like positionals after --', () => {
+  const r = ax(['page.html', '.card', '--', '--json-envelope'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('One boldA1\nTwoB2')
+})
+
+test('json envelope: does not activate when another string option consumes its token', () => {
+  const r = ax(['page.html', '.card', '--method', '--json-envelope'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('One boldA1\nTwoB2')
 })
 
 test('json envelope: unsupported modes fail before reading the source', () => {
