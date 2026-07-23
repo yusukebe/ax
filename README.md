@@ -25,7 +25,7 @@ ax replaces the loop with one command:
 For machine-readable continuation, add `--json-envelope`: stdout becomes
 `{data, meta}`. When `meta.state` is `"more"`, rerun the same command with
 `--offset <meta.nextOffset>`; stop on `"complete"`. Existing `--json` remains
-a top-level array.
+a top-level array. Do not restart from zero or increase the budget.
 
 ```bash
 ax page.html '.item' --row 'title=.title' --limit 20 --json-envelope
