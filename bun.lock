@@ -11,8 +11,6 @@
         "@types/bun": "latest",
         "bun2nix": "^2.1.2",
         "oxfmt": "latest",
-      },
-      "peerDependencies": {
         "typescript": "^5",
       },
     },
