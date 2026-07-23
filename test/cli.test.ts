@@ -563,14 +563,19 @@ test('json envelope: unsupported modes fail before reading the source', () => {
   }
 })
 
-test('json envelope: trailing value-less string modifiers fail before source I/O', () => {
+test('json envelope: value-less string modifiers fail before source I/O in either flag order', () => {
   for (const modifier of ['--attr', '--row', '--locate', '--where']) {
-    const r = ax(['missing.html', '.x', '--json-envelope', modifier])
-    expect(r.code).toBe(1)
-    expect(r.out).toBe('')
-    expect(r.err).toContain(`ax: error: ${modifier} requires a value`)
-    expect(r.err).not.toContain('ENOENT')
-    expect(r.err).not.toContain('request failed')
+    for (const flags of [
+      ['--json-envelope', modifier],
+      [modifier, '--json-envelope'],
+    ]) {
+      const r = ax(['missing.html', '.x', ...flags])
+      expect(r.code).toBe(1)
+      expect(r.out).toBe('')
+      expect(r.err).toContain(`ax: error: ${modifier} requires a value`)
+      expect(r.err).not.toContain('ENOENT')
+      expect(r.err).not.toContain('request failed')
+    }
   }
 })
 

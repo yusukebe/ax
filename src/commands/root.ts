@@ -625,13 +625,19 @@ export async function root(argv: string[]) {
     budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
     offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
-  const jsonEnvelope = flags['json-envelope'] === true
-  const missingEnvelopeValue = [
+  const envelopeModifiers = [
     ['--attr', flags.attr],
     ['--row', flags.row],
     ['--locate', flags.locate],
     ['--where', flags.where],
-  ].find(([, value]) => value === true)?.[0]
+  ] as const
+  const rawJsonEnvelope = argv.includes('--json-envelope')
+  const jsonEnvelope = flags['json-envelope'] === true || rawJsonEnvelope
+  const missingEnvelopeValue =
+    envelopeModifiers.find(([, value]) => value === true)?.[0] ??
+    envelopeModifiers.find(([flag]) =>
+      argv.some((arg, index) => arg === '--json-envelope' && argv[index - 1] === flag)
+    )?.[0]
   if (jsonEnvelope && missingEnvelopeValue) {
     fail(
       `${missingEnvelopeValue} requires a value`,
