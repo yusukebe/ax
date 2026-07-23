@@ -11,7 +11,7 @@ import {
   decodeBody,
   type CappedBody,
 } from '../lib/io'
-import { emitLines, emitJson, writeStdoutFlushed } from '../lib/emit'
+import { emitLines, emitJson, emitJsonEnvelope, writeStdoutFlushed } from '../lib/emit'
 import { compileWhere } from '../lib/expr'
 import { toTsv } from '../lib/query'
 
@@ -580,6 +580,7 @@ export async function root(argv: string[]) {
     text: { type: 'boolean' },
     html: { type: 'boolean' },
     json: { type: 'boolean' },
+    'json-envelope': { type: 'boolean' },
     outline: { type: 'boolean' },
     count: { type: 'boolean' },
     table: { type: 'boolean' },
@@ -622,6 +623,9 @@ export async function root(argv: string[]) {
     budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
     offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
+  const jsonEnvelope = flags['json-envelope'] === true
+  const emitStructured = (value: unknown[]) =>
+    jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
   const isUrl = /^https?:\/\//.test(src!)
   const headers = isUrl ? requestHeaders(flags) : {}
   const parseFlags =
@@ -1007,13 +1011,13 @@ export async function root(argv: string[]) {
     return emitLines(toTsv(rowResult), opts)
   }
 
-  if (flags.json) {
+  if (flags.json || jsonEnvelope) {
     const rows = els.map((el) => ({
       text: (el.textContent ?? '').trim(),
       html: el.innerHTML,
       attrs: Object.fromEntries(el.getAttributeNames().map((n) => [n, el.getAttribute(n) ?? ''])),
     }))
-    return emitJson(rows, opts)
+    return emitStructured(rows)
   }
 
   if (typeof flags.attr === 'string') {

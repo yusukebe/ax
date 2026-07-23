@@ -6,12 +6,26 @@ const CHARS_PER_TOKEN = 4
 
 type EmitOpts = { limit?: number; all?: boolean; budget?: number; offset?: number }
 
-type CapResult<T> = { shown: T[]; dropped: number; resume: number; pastEnd: number | null }
+type PageState = 'more' | 'complete' | 'past_end'
+
+export type PageMeta = {
+  state: PageState
+  total: number
+  offset: number
+  returned: number
+  nextOffset: number | null
+}
+
+type CapResult<T> = { shown: T[]; meta: PageMeta }
 
 function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapResult<T> {
+  const total = items.length
   const offset = opts.offset && opts.offset > 0 ? opts.offset : 0
-  if (offset >= items.length && offset > 0) {
-    return { shown: [], dropped: 0, resume: 0, pastEnd: items.length }
+  if (offset >= total && offset > 0) {
+    return {
+      shown: [],
+      meta: { state: 'past_end', total, offset, returned: 0, nextOffset: null },
+    }
   }
   let shown = offset > 0 ? items.slice(offset) : items
   if (!opts.all) {
@@ -29,23 +43,34 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
     }
     shown = shown.slice(0, i)
   }
+  const returned = shown.length
+  const nextOffset = offset + returned < total ? offset + returned : null
   return {
     shown,
-    dropped: items.length - offset - shown.length,
-    resume: offset + shown.length,
-    pastEnd: null,
+    meta: {
+      state: nextOffset === null ? 'complete' : 'more',
+      total,
+      offset,
+      returned,
+      nextOffset,
+    },
   }
 }
 
 // Truncation is never silent — and the note names the exact --offset to
 // continue from, so a follow-up call fetches only what wasn't shown instead
 // of re-emitting everything under a bigger budget.
-function note(r: CapResult<unknown>) {
-  if (r.pastEnd !== null) {
-    process.stderr.write(`ax: note: --offset is past the end — only ${r.pastEnd} result(s) exist\n`)
-  } else if (r.dropped > 0) {
+function note(meta: PageMeta) {
+  if (meta.state === 'past_end') {
     process.stderr.write(
-      `ax: note: ${r.dropped} more result(s) hidden — continue with --offset ${r.resume} (or --all, --limit N, --budget T)\n`
+      `ax: note: --offset is past the end — only ${meta.total} result(s) exist\n`
+    )
+    return
+  }
+  if (meta.state === 'more') {
+    const hidden = meta.total - meta.offset - meta.returned
+    process.stderr.write(
+      `ax: note: ${hidden} more result(s) hidden — continue with --offset ${meta.nextOffset} (or --all, --limit N, --budget T)\n`
     )
   }
 }
@@ -93,15 +118,20 @@ export function emitLines(items: string[], opts: EmitOpts = {}) {
   if (stripped > 0) {
     process.stderr.write(`ax: note: stripped ${stripped} control character(s) from output\n`)
   }
-  note(r)
+  note(r.meta)
 }
 
 export function emitJson(value: unknown, opts: EmitOpts = {}) {
   if (Array.isArray(value)) {
     const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
     process.stdout.write(JSON.stringify(r.shown, null, 2) + '\n')
-    note(r)
+    note(r.meta)
   } else {
     process.stdout.write(JSON.stringify(value, null, 2) + '\n')
   }
+}
+
+export function emitJsonEnvelope(value: unknown[], opts: EmitOpts = {}) {
+  const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
+  process.stdout.write(JSON.stringify({ data: r.shown, meta: r.meta }, null, 2) + '\n')
 }

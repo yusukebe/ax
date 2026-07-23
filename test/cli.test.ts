@@ -418,6 +418,46 @@ test('cap: truncation note names the resume offset and --offset continues withou
   expect(tail.err).not.toContain('hidden')
 })
 
+test('json envelope: exposes machine-readable continuation metadata', () => {
+  const first = ax(['many.html', '.x', '--limit', '4', '--json-envelope'])
+  expect(first.code).toBe(0)
+  expect(JSON.parse(first.out)).toEqual({
+    data: [
+      { text: 'i0', html: 'i0', attrs: { class: 'x' } },
+      { text: 'i1', html: 'i1', attrs: { class: 'x' } },
+      { text: 'i2', html: 'i2', attrs: { class: 'x' } },
+      { text: 'i3', html: 'i3', attrs: { class: 'x' } },
+    ],
+    meta: {
+      state: 'more',
+      total: 60,
+      offset: 0,
+      returned: 4,
+      nextOffset: 4,
+    },
+  })
+  expect(first.err).not.toContain('continue with --offset')
+})
+
+test('json envelope: nextOffset resumes without overlap or gaps', () => {
+  const expected = JSON.parse(ax(['many.html', '.x', '--json', '--all']).out)
+  const actual: unknown[] = []
+  let offset = 0
+
+  while (true) {
+    const page = JSON.parse(
+      ax(['many.html', '.x', '--limit', '7', '--offset', String(offset), '--json-envelope']).out
+    )
+    actual.push(...page.data)
+    if (page.meta.state === 'complete') break
+    expect(page.meta.state).toBe('more')
+    expect(page.meta.nextOffset).toBe(offset + page.meta.returned)
+    offset = page.meta.nextOffset
+  }
+
+  expect(actual).toEqual(expected)
+})
+
 test('cap: --offset past the end is announced, never silent', () => {
   const r = ax(['many.html', '.x', '--offset', '999'])
   expect(r.code).toBe(0)
