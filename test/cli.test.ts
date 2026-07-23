@@ -517,12 +517,23 @@ test('json envelope: complete, past_end, and filtered empty are distinct', () =>
 
 test('json envelope: budget continuation reconstructs the full result', () => {
   const expected = JSON.parse(ax(['many.html', '.x', '--json', '--all']).out)
-  const first = JSON.parse(ax(['many.html', '.x', '--budget', '40', '--json-envelope']).out)
-  const rest = JSON.parse(
-    ax(['many.html', '.x', '--offset', String(first.meta.nextOffset), '--all', '--json-envelope'])
-      .out
-  )
-  expect([...first.data, ...rest.data]).toEqual(expected)
+  const actual: unknown[] = []
+  let offset = 0
+
+  while (true) {
+    const page = JSON.parse(
+      ax(['many.html', '.x', '--budget', '40', '--offset', String(offset), '--json-envelope']).out
+    )
+    actual.push(...page.data)
+    if (page.meta.state !== 'more') {
+      expect(['complete', 'past_end']).toContain(page.meta.state)
+      break
+    }
+    expect(page.meta.nextOffset).toBeGreaterThan(offset)
+    offset = page.meta.nextOffset
+  }
+
+  expect(actual).toEqual(expected)
 })
 
 test('json envelope: existing --json remains a top-level array', () => {
@@ -549,6 +560,17 @@ test('json envelope: unsupported modes fail before reading the source', () => {
     expect(r.err).toContain('ax: error: --json-envelope')
     expect(r.err).not.toContain('request failed')
     expect(r.err).not.toContain('ENOENT')
+  }
+})
+
+test('json envelope: trailing value-less string modifiers fail before source I/O', () => {
+  for (const modifier of ['--attr', '--row', '--locate', '--where']) {
+    const r = ax(['missing.html', '.x', '--json-envelope', modifier])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain(`ax: error: ${modifier} requires a value`)
+    expect(r.err).not.toContain('ENOENT')
+    expect(r.err).not.toContain('request failed')
   }
 })
 

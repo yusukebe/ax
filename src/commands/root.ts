@@ -56,8 +56,8 @@ extract (selector — CSS, structured):
 
 output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
-  --json-envelope    {data, meta}; state=more → --offset nextOffset; complete = stop
-                     do not restart or increase budget
+  --json-envelope    {data, meta}; continue only while state=more → --offset nextOffset
+                     stop on complete or past_end; do not restart or increase budget
   --limit <n> (default 50)   --all
   --budget <t>       cap output at ~t tokens; truncation is never silent
   --offset <n>       skip the first n results — truncation notes name the
@@ -626,6 +626,18 @@ export async function root(argv: string[]) {
     offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
   const jsonEnvelope = flags['json-envelope'] === true
+  const missingEnvelopeValue = [
+    ['--attr', flags.attr],
+    ['--row', flags.row],
+    ['--locate', flags.locate],
+    ['--where', flags.where],
+  ].find(([, value]) => value === true)?.[0]
+  if (jsonEnvelope && missingEnvelopeValue) {
+    fail(
+      `${missingEnvelopeValue} requires a value`,
+      'pass the modifier value before --json-envelope'
+    )
+  }
   const emitStructured = (value: unknown[]) =>
     jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
   const isUrl = /^https?:\/\//.test(src!)
