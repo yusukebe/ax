@@ -13,7 +13,7 @@ export type PageMeta = {
   total: number
   offset: number
   returned: number
-  nextOffset: number | null
+  next_offset: number | null
 }
 
 type CapResult<T> = { shown: T[]; meta: PageMeta }
@@ -24,7 +24,7 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
   if (offset >= total && offset > 0) {
     return {
       shown: [],
-      meta: { state: 'past_end', total, offset, returned: 0, nextOffset: null },
+      meta: { state: 'past_end', total, offset, returned: 0, next_offset: null },
     }
   }
   let shown = offset > 0 ? items.slice(offset) : items
@@ -52,7 +52,7 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
       total,
       offset,
       returned,
-      nextOffset,
+      next_offset: nextOffset,
     },
   }
 }
@@ -70,7 +70,7 @@ function note(meta: PageMeta) {
   if (meta.state === 'more') {
     const hidden = meta.total - meta.offset - meta.returned
     process.stderr.write(
-      `ax: note: ${hidden} more result(s) hidden — continue with --offset ${meta.nextOffset} (or --all, --limit N, --budget T)\n`
+      `ax: note: ${hidden} more result(s) hidden — continue with --offset ${meta.next_offset} (or --all, --limit N, --budget T)\n`
     )
   }
 }

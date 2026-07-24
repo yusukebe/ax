@@ -435,13 +435,13 @@ test('json envelope: exposes machine-readable continuation metadata', () => {
       total: 60,
       offset: 0,
       returned: 4,
-      nextOffset: 4,
+      next_offset: 4,
     },
   })
   expect(first.err).not.toContain('continue with --offset')
 })
 
-test('json envelope: nextOffset resumes without overlap or gaps', () => {
+test('json envelope: next_offset resumes without overlap or gaps', () => {
   const expected = JSON.parse(ax(['many.html', '.x', '--json', '--all']).out)
   const actual: unknown[] = []
   let offset = 0
@@ -453,8 +453,8 @@ test('json envelope: nextOffset resumes without overlap or gaps', () => {
     actual.push(...page.data)
     if (page.meta.state === 'complete') break
     expect(page.meta.state).toBe('more')
-    expect(page.meta.nextOffset).toBe(offset + page.meta.returned)
-    offset = page.meta.nextOffset
+    expect(page.meta.next_offset).toBe(offset + page.meta.returned)
+    offset = page.meta.next_offset
   }
 
   expect(actual).toEqual(expected)
@@ -470,7 +470,7 @@ test('json envelope: row, table, and locate use the same contract', () => {
     total: 2,
     offset: 0,
     returned: 1,
-    nextOffset: 1,
+    next_offset: 1,
   })
 
   const table = JSON.parse(ax(['page.html', '--table', '--json-envelope']).out)
@@ -489,7 +489,7 @@ test('json envelope: complete, past_end, and filtered empty are distinct', () =>
     total: 60,
     offset: 59,
     returned: 1,
-    nextOffset: null,
+    next_offset: null,
   })
 
   const pastEnd = JSON.parse(ax(['many.html', '.x', '--offset', '999', '--json-envelope']).out)
@@ -500,7 +500,7 @@ test('json envelope: complete, past_end, and filtered empty are distinct', () =>
       total: 60,
       offset: 999,
       returned: 0,
-      nextOffset: null,
+      next_offset: null,
     },
   })
 
@@ -513,7 +513,7 @@ test('json envelope: complete, past_end, and filtered empty are distinct', () =>
     total: 0,
     offset: 0,
     returned: 0,
-    nextOffset: null,
+    next_offset: null,
   })
 })
 
@@ -531,8 +531,8 @@ test('json envelope: budget continuation reconstructs the full result', () => {
       expect(['complete', 'past_end']).toContain(page.meta.state)
       break
     }
-    expect(page.meta.nextOffset).toBeGreaterThan(offset)
-    offset = page.meta.nextOffset
+    expect(page.meta.next_offset).toBeGreaterThan(offset)
+    offset = page.meta.next_offset
   }
 
   expect(actual).toEqual(expected)

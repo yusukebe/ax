@@ -24,7 +24,7 @@ ax replaces the loop with one command:
 
 For machine-readable continuation, add `--json-envelope`: stdout becomes
 `{data, meta}`. Continue only while `meta.state` is `"more"`, rerunning the
-same command with `--offset <meta.nextOffset>`; stop on `"complete"` or
+same command with `--offset <meta.next_offset>`; stop on `"complete"` or
 `"past_end"`. Existing `--json` remains a top-level array. Do not restart from
 zero or increase the budget.
 

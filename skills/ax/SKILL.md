@@ -43,7 +43,7 @@ Answer with the data, concisely — no methodology narration.
   `--all`, `--budget <tokens>` control it. Rows default to token-cheap TSV; add `--json` if you need JSON.
 - For automated continuation, use `--json-envelope`. Read `data`; when
   `meta.state` is `more`, rerun the same command with
-  `--offset <meta.nextOffset>`. Continue only while it is `more`; stop on
+  `--offset <meta.next_offset>`. Continue only while it is `more`; stop on
   `complete` or `past_end`; do not restart from zero or increase the budget.
 - Errors are one stderr line with a hint — fix the flag, not the approach.
 - If ax says "likely a JS-rendered SPA", stop probing selectors — switch to
