@@ -38,6 +38,10 @@ beforeAll(() => {
       <table><tr><th>K</th><th>V</th></tr><tr><td>x</td><td>1</td></tr></table>
     </body></html>`
   )
+  writeFileSync(
+    join(dir, 'many.html'),
+    `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
+  )
 })
 
 test('extract: --row defaults to TSV, --json for JSON rows', () => {
@@ -399,8 +403,6 @@ test('numeric output flags preserve valid boundary values', () => {
 })
 
 test('cap: default limit with stderr note', () => {
-  const many = `<ul>${Array.from({ length: 60 }, (_, i) => `<li class="x">i${i}</li>`).join('')}</ul>`
-  writeFileSync(join(dir, 'many.html'), many)
   const r = ax(['many.html', '.x'])
   expect(r.out.split('\n')).toHaveLength(50)
   expect(r.err).toContain('hidden')
@@ -416,6 +418,179 @@ test('cap: truncation note names the resume offset and --offset continues withou
   const tail = ax(['many.html', '.x', '--offset', '56'])
   expect(tail.out.split('\n')).toEqual(['i56', 'i57', 'i58', 'i59'])
   expect(tail.err).not.toContain('hidden')
+})
+
+test('json envelope: exposes machine-readable continuation metadata', () => {
+  const first = ax(['many.html', '.x', '--limit', '4', '--json-envelope'])
+  expect(first.code).toBe(0)
+  expect(JSON.parse(first.out)).toEqual({
+    data: [
+      { text: 'i0', html: 'i0', attrs: { class: 'x' } },
+      { text: 'i1', html: 'i1', attrs: { class: 'x' } },
+      { text: 'i2', html: 'i2', attrs: { class: 'x' } },
+      { text: 'i3', html: 'i3', attrs: { class: 'x' } },
+    ],
+    meta: {
+      state: 'more',
+      total: 60,
+      offset: 0,
+      returned: 4,
+      next_offset: 4,
+    },
+  })
+  expect(first.err).not.toContain('continue with --offset')
+})
+
+test('json envelope: next_offset resumes without overlap or gaps', () => {
+  const expected = JSON.parse(ax(['many.html', '.x', '--json', '--all']).out)
+  const actual: unknown[] = []
+  let offset = 0
+
+  while (true) {
+    const page = JSON.parse(
+      ax(['many.html', '.x', '--limit', '7', '--offset', String(offset), '--json-envelope']).out
+    )
+    actual.push(...page.data)
+    if (page.meta.state === 'complete') break
+    expect(page.meta.state).toBe('more')
+    expect(page.meta.next_offset).toBe(offset + page.meta.returned)
+    offset = page.meta.next_offset
+  }
+
+  expect(actual).toEqual(expected)
+})
+
+test('json envelope: row, table, and locate use the same contract', () => {
+  const row = JSON.parse(
+    ax(['page.html', '.card', '--row', 'title=a', '--limit', '1', '--json-envelope']).out
+  )
+  expect(row.data).toEqual([{ title: 'One bold' }])
+  expect(row.meta).toEqual({
+    state: 'more',
+    total: 2,
+    offset: 0,
+    returned: 1,
+    next_offset: 1,
+  })
+
+  const table = JSON.parse(ax(['page.html', '--table', '--json-envelope']).out)
+  expect(table.data).toEqual([{ K: 'x', V: '1' }])
+  expect(table.meta.state).toBe('complete')
+
+  const locate = JSON.parse(ax(['page.html', '--locate', '2.htm', '--json-envelope']).out)
+  expect(locate.data[0].selector).toContain('a')
+  expect(locate.meta.returned).toBe(locate.data.length)
+})
+
+test('json envelope: complete, past_end, and filtered empty are distinct', () => {
+  const complete = JSON.parse(ax(['many.html', '.x', '--offset', '59', '--json-envelope']).out)
+  expect(complete.meta).toEqual({
+    state: 'complete',
+    total: 60,
+    offset: 59,
+    returned: 1,
+    next_offset: null,
+  })
+
+  const pastEnd = JSON.parse(ax(['many.html', '.x', '--offset', '999', '--json-envelope']).out)
+  expect(pastEnd).toEqual({
+    data: [],
+    meta: {
+      state: 'past_end',
+      total: 60,
+      offset: 999,
+      returned: 0,
+      next_offset: null,
+    },
+  })
+
+  const empty = JSON.parse(
+    ax(['page.html', '.card', '--row', 'lv=.lv', '--where', 'lv == "missing"', '--json-envelope'])
+      .out
+  )
+  expect(empty.meta).toEqual({
+    state: 'complete',
+    total: 0,
+    offset: 0,
+    returned: 0,
+    next_offset: null,
+  })
+})
+
+test('json envelope: budget continuation reconstructs the full result', () => {
+  const expected = JSON.parse(ax(['many.html', '.x', '--json', '--all']).out)
+  const actual: unknown[] = []
+  let offset = 0
+
+  while (true) {
+    const page = JSON.parse(
+      ax(['many.html', '.x', '--budget', '40', '--offset', String(offset), '--json-envelope']).out
+    )
+    actual.push(...page.data)
+    if (page.meta.state !== 'more') {
+      expect(['complete', 'past_end']).toContain(page.meta.state)
+      break
+    }
+    expect(page.meta.next_offset).toBeGreaterThan(offset)
+    offset = page.meta.next_offset
+  }
+
+  expect(actual).toEqual(expected)
+})
+
+test('json envelope: existing --json remains a top-level array', () => {
+  const out = JSON.parse(ax(['page.html', '.card', '--json']).out)
+  expect(Array.isArray(out)).toBe(true)
+})
+
+test('json envelope: ignores option-like positionals after --', () => {
+  const r = ax(['page.html', '.card', '--', '--json-envelope'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('One boldA1\nTwoB2')
+})
+
+test('json envelope: does not activate when another string option consumes its token', () => {
+  const r = ax(['page.html', '.card', '--method', '--json-envelope'])
+  expect(r.code).toBe(0)
+  expect(r.out).toBe('One boldA1\nTwoB2')
+})
+
+test('json envelope: unsupported modes fail before reading the source', () => {
+  const cases = [
+    ['http://127.0.0.1:1', '--json-envelope'],
+    ['missing.html', '--md', '--json-envelope'],
+    ['missing.html', '--outline', '--json-envelope'],
+    ['missing.html', '.x', '--count', '--json-envelope'],
+    ['missing.html', '.x', '--text', '--json-envelope'],
+    ['missing.html', '.x', '--html', '--json-envelope'],
+    ['missing.html', '.x', '--attr', 'href', '--json-envelope'],
+    ['missing.html', '.x', '--body', '--json-envelope'],
+  ]
+
+  for (const args of cases) {
+    const r = ax(args)
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain('ax: error: --json-envelope')
+    expect(r.err).not.toContain('request failed')
+    expect(r.err).not.toContain('ENOENT')
+  }
+})
+
+test('json envelope: value-less string modifiers fail before source I/O in either flag order', () => {
+  for (const modifier of ['--attr', '--row', '--locate', '--where']) {
+    for (const flags of [
+      ['--json-envelope', modifier],
+      [modifier, '--json-envelope'],
+    ]) {
+      const r = ax(['missing.html', '.x', ...flags])
+      expect(r.code).toBe(1)
+      expect(r.out).toBe('')
+      expect(r.err).toContain(`ax: error: ${modifier} requires a value`)
+      expect(r.err).not.toContain('ENOENT')
+      expect(r.err).not.toContain('request failed')
+    }
+  }
 })
 
 test('cap: --offset past the end is announced, never silent', () => {

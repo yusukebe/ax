@@ -11,7 +11,7 @@ import {
   decodeBody,
   type CappedBody,
 } from '../lib/io'
-import { emitLines, emitJson, writeStdoutFlushed } from '../lib/emit'
+import { emitLines, emitJson, emitJsonEnvelope, writeStdoutFlushed } from '../lib/emit'
 import { compileWhere } from '../lib/expr'
 import { toTsv } from '../lib/query'
 
@@ -56,6 +56,8 @@ extract (selector — CSS, structured):
 
 output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows
+  --json-envelope    {data, meta}; continue only while state=more → --offset next_offset
+                     stop on complete or past_end; do not restart or increase budget
   --limit <n> (default 50)   --all
   --budget <t>       cap output at ~t tokens; truncation is never silent
   --offset <n>       skip the first n results — truncation notes name the
@@ -580,6 +582,7 @@ export async function root(argv: string[]) {
     text: { type: 'boolean' },
     html: { type: 'boolean' },
     json: { type: 'boolean' },
+    'json-envelope': { type: 'boolean' },
     outline: { type: 'boolean' },
     count: { type: 'boolean' },
     table: { type: 'boolean' },
@@ -622,7 +625,64 @@ export async function root(argv: string[]) {
     budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
     offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
+  const envelopeModifiers = [
+    ['--attr', flags.attr],
+    ['--row', flags.row],
+    ['--locate', flags.locate],
+    ['--where', flags.where],
+  ] as const
+  const jsonEnvelope = flags['json-envelope'] === true
+  const optionsEnd = argv.indexOf('--')
+  const missingEnvelopeValue =
+    (jsonEnvelope ? envelopeModifiers.find(([, value]) => value === true)?.[0] : undefined) ??
+    envelopeModifiers.find(([flag]) =>
+      argv.some(
+        (arg, index) =>
+          (optionsEnd === -1 || index < optionsEnd) &&
+          arg === '--json-envelope' &&
+          argv[index - 1] === flag
+      )
+    )?.[0]
+  if (missingEnvelopeValue) {
+    fail(
+      `${missingEnvelopeValue} requires a value`,
+      'pass the modifier value before --json-envelope'
+    )
+  }
+  const emitStructured = (value: unknown[]) =>
+    jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
   const isUrl = /^https?:\/\//.test(src!)
+  const envelopeConflict =
+    flags.md === true
+      ? '--md'
+      : flags.outline === true
+        ? '--outline'
+        : flags.count === true
+          ? '--count'
+          : flags.text === true
+            ? '--text'
+            : flags.html === true
+              ? '--html'
+              : typeof flags.attr === 'string'
+                ? '--attr'
+                : flags.body === true
+                  ? '--body'
+                  : null
+  if (jsonEnvelope && envelopeConflict) {
+    const hint =
+      envelopeConflict === '--md'
+        ? 'markdown continuation is not supported because an offset may split document structure'
+        : 'use --row, --table, --locate, or selector JSON output'
+    fail(`--json-envelope cannot be combined with ${envelopeConflict}`, hint)
+  }
+  const hasEnvelopeOutput =
+    selector !== undefined || flags.table === true || typeof flags.locate === 'string'
+  if (jsonEnvelope && !hasEnvelopeOutput) {
+    fail(
+      '--json-envelope requires structured parse output',
+      'use it with --row, --table, --locate, or a selector; fetch mode already returns JSON'
+    )
+  }
   const headers = isUrl ? requestHeaders(flags) : {}
   const parseFlags =
     selector !== undefined ||
@@ -919,7 +979,7 @@ export async function root(argv: string[]) {
       })
     }
     if (hits.length === 0) fail(`text not found: ${flags.locate}`)
-    return emitJson(hits, opts)
+    return emitStructured(hits)
   }
 
   if (flags.table) {
@@ -979,7 +1039,7 @@ export async function root(argv: string[]) {
     if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
     if (parsed.length === 1) rowStats(parsed[0]!.rows, wherePred ? beforeWhere : undefined)
-    if (flags.json || parsed.length > 1) return emitJson(tableResult, opts)
+    if (jsonEnvelope || flags.json || parsed.length > 1) return emitStructured(tableResult)
     return emitLines(toTsv(tableResult), opts)
   }
 
@@ -1003,17 +1063,17 @@ export async function root(argv: string[]) {
     })
     const rowResult = wherePred ? rows.filter(wherePred) : rows
     rowStats(rowResult, wherePred ? rows.length : undefined)
-    if (flags.json) return emitJson(rowResult, opts)
+    if (jsonEnvelope || flags.json) return emitStructured(rowResult)
     return emitLines(toTsv(rowResult), opts)
   }
 
-  if (flags.json) {
+  if (flags.json || jsonEnvelope) {
     const rows = els.map((el) => ({
       text: (el.textContent ?? '').trim(),
       html: el.innerHTML,
       attrs: Object.fromEntries(el.getAttributeNames().map((n) => [n, el.getAttribute(n) ?? ''])),
     }))
-    return emitJson(rows, opts)
+    return emitStructured(rows)
   }
 
   if (typeof flags.attr === 'string') {

@@ -22,6 +22,16 @@ ax replaces the loop with one command:
 - **Extract, structured** — `--row 'title=a, href=a@href'` pulls multi-field rows in one call; `--table` turns `<table>` into keyed rows; `--where` filters with a safe expression language.
 - **Token-cheap by design** — results cap at 50 with a stderr note (never silent truncation), `--budget <tokens>` caps output by estimated tokens, rows default to header-once TSV (`--json` for JSON). Truncation notes name the exact `--offset` to continue from, so a follow-up call emits only what wasn't shown — no overlap, and the parse cache means no refetch.
 
+For machine-readable continuation, add `--json-envelope`: stdout becomes
+`{data, meta}`. Continue only while `meta.state` is `"more"`, rerunning the
+same command with `--offset <meta.next_offset>`; stop on `"complete"` or
+`"past_end"`. Existing `--json` remains a top-level array. Do not restart from
+zero or increase the budget.
+
+```bash
+ax page.html '.item' --row 'title=.title' --limit 20 --json-envelope
+```
+
 ## Install
 
 ```sh
