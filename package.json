@@ -1,6 +1,6 @@
 {
   "name": "ax",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "The AI-era curl: fetch, discover, extract. One command.",
   "license": "MIT",
   "homepage": "https://github.com/yusukebe/ax",
