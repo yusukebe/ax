@@ -610,6 +610,45 @@ test('cap: --budget truncation resumes exactly where the note said', () => {
   expect([...first.out.split('\n'), ...rest.out.split('\n')]).toEqual(all)
 })
 
+test('cap: --md --all emits the whole page, no default budget', () => {
+  writeFileSync(
+    join(dir, 'long-md.html'),
+    `<html><body><article>${Array.from(
+      { length: 300 },
+      (_, i) => `<p>paragraph number ${i} with enough filler text to spend a few tokens</p>`
+    ).join('')}</article></body></html>`
+  )
+  const capped = ax(['long-md.html', '--md'])
+  expect(capped.err).toContain('more result(s) hidden')
+
+  const all = ax(['long-md.html', '--md', '--all'])
+  expect(all.code).toBe(0)
+  expect(all.err).not.toContain('hidden')
+  expect(all.out.match(/paragraph number/g)).toHaveLength(300)
+
+  // an explicit --budget still wins, even together with --all
+  const budgeted = ax(['long-md.html', '--md', '--all', '--budget', '200'])
+  expect(budgeted.err).toContain('more result(s) hidden')
+  expect(budgeted.out.length).toBeLessThan(all.out.length)
+})
+
+test('cap: --md alone stays capped by the default token budget', () => {
+  // Long-prose page: few enough lines that --limit 50 never fires, so what
+  // truncates here can only be the ~2000-token default budget.
+  writeFileSync(
+    join(dir, 'prose-md.html'),
+    `<html><body><article>${Array.from(
+      { length: 40 },
+      (_, i) => `<p>paragraph ${i}: ${'filler words to pad this paragraph out. '.repeat(10)}</p>`
+    ).join('')}</article></body></html>`
+  )
+  const r = ax(['prose-md.html', '--md'])
+  expect(r.code).toBe(0)
+  expect(r.err).toContain('more result(s) hidden')
+  expect(Number(r.err.match(/continue with --offset (\d+)/)![1]!)).toBeLessThan(50)
+  expect(r.out.length).toBeLessThan(2000 * 4 + 500)
+})
+
 test('cap: --offset applies to JSON rows too', () => {
   const r = ax(['page.html', '.card', '--row', 'title=a', '--json', '--offset', '1'])
   expect(JSON.parse(r.out)).toEqual([{ title: 'Two' }])

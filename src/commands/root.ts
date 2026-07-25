@@ -50,7 +50,8 @@ extract (selector — CSS, structured):
                                               attributes; empty sel = the match)
   --table            <table> → rows keyed by headers
   --text | --attr <name> | --html             simpler per-match output
-  --md               readable page content as markdown (for reading docs)
+  --md               readable page content as markdown (for reading docs;
+                     capped at ~2000 tokens unless --all or --budget T)
   --where <expr>     filter rows: price > 100 && name ~ /^foo/i  (no eval;
                      \`col name\` for headers with spaces)
 
@@ -939,7 +940,12 @@ export async function root(argv: string[]) {
 
   if (flags.md) {
     const md = toMarkdown((document.querySelector('html') ?? document) as unknown as Element)
-    return emitLines(md.split('\n'), { ...opts, budget: opts.budget || 2000 })
+    // --md carries a default token budget on top of --limit, because markdown
+    // lines are cheap individually but a whole page adds up. It is only a
+    // *default*: --all means all (never a truncation note pointing at the flag
+    // that is already set), and an explicit --budget wins.
+    const budget = opts.all || opts.budget > 0 ? opts.budget : 2000
+    return emitLines(md.split('\n'), { ...opts, budget })
   }
 
   if (flags.outline) {
