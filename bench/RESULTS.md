@@ -265,3 +265,59 @@ one sample lost outright. Reported as median-of-3, loss included.
 
 **Tool-warm scoreboard (Opus, all verified correct):** drift −67%, clean
 extract −65%, live web −23% (median of 3). These are the site numbers.
+
+## JSON-envelope continuation (Sonnet 5, n=3 per condition)
+
+### Method
+
+A deterministic 120-row HTML fixture was generated from an independent fixed seed.
+Each run used budget 600, while ground truth remained in the parent process.
+Conformance explicitly taught continuation; Adoption compared the same natural task
+with the full Skill versus a runtime-only continuation-guidance ablation.
+Raw session records stayed outside the repository.
+
+### Preliminary stopped attempts
+
+Three earlier formal matrix invocations were stopped by gradability gates and excluded from the reported sample.
+They exposed fixture-metadata preflights, compound or interpreter-wrapped ax commands,
+and terminal responses containing text outside the required JSON object.
+The methodology was then changed to require standalone ax calls, prohibit all non-ax
+fixture access, enforce a JSON-only response, and tighten access auditing before the
+final matrix was collected. A post-run review further replaced permissive non-ax
+handling with a conservative allowlist; regrading the retained runs did not change
+their gradability or published scores. These are adaptive, exploratory results rather
+than a preregistered confirmatory evaluation.
+
+### Per-run results
+
+| Run | Condition        | Exact | Protocol | Envelope | Pages | Turns | Duration (s) |  Input | Output | Cache create | Cache read |   Cost |
+| --: | ---------------- | :---: | -------- | :------: | ----: | ----: | -----------: | -----: | -----: | -----------: | ---------: | -----: |
+|   1 | Conformance      |  no   | pass     |    —     |     5 |     8 |        170.5 |  57346 |   9746 |            0 |     314752 | $0.413 |
+|   2 | Adoption guided  |  no   | fail     |    no    |     3 |     6 |        370.2 |  14794 |  23254 |            0 |     290048 | $0.480 |
+|   3 | Adoption ablated |  no   | fail     |    no    |     6 |    10 |        630.9 |  72592 |  32273 |            0 |     503680 | $0.853 |
+|   4 | Conformance      |  yes  | pass     |    —     |     5 |     8 |        167.6 |  56400 |   7907 |            0 |     360832 | $0.396 |
+|   5 | Adoption guided  |  no   | pass     |   yes    |     5 |     7 |        199.8 |  20118 |  10369 |            0 |     358784 | $0.324 |
+|   6 | Adoption ablated |  no   | fail     |    no    |     3 |     5 |        747.2 |  86911 |  43130 |            0 |     289280 | $0.994 |
+|   7 | Conformance      |  yes  | pass     |    —     |     5 |     8 |        153.6 |  18545 |   7222 |            0 |     398464 | $0.284 |
+|   8 | Adoption guided  |  no   | pass     |   yes    |     5 |     8 |        413.9 |  33677 |  22772 |            0 |     496384 | $0.592 |
+|   9 | Adoption ablated |  no   | fail     |    no    |     6 |     8 |        609.2 | 102120 |  29857 |            0 |     462464 | $0.893 |
+
+### Aggregate
+
+| Condition        | Exact | Protocol pass | Envelope adoption | Median turns | Median duration (s) | Median input | Median output | Median cost |
+| ---------------- | ----: | ------------: | ----------------: | -----------: | ------------------: | -----------: | ------------: | ----------: |
+| Conformance      |   2/3 |           3/3 |                 — |            8 |               167.6 |        56400 |          7907 |      $0.396 |
+| Adoption guided  |   0/3 |           2/3 |               2/3 |            7 |               370.2 |        20118 |         22772 |      $0.480 |
+| Adoption ablated |   0/3 |           0/3 |               0/3 |            8 |               630.9 |        86911 |         32273 |      $0.893 |
+
+### Observed failure modes
+
+Across 4 Adoption runs without envelope adoption, 4 used `offset-without-envelope`; 4 failed protocol grading.
+Among 7 non-exact answers, 4 were schema-invalid. Among the 3 schema-valid non-exact answers, 0 had missing records, 3 had unexpected records, 0 had duplicate records, 0 had ordering errors, and 0 had field mismatches. Categories can overlap.
+
+### Interpretation and limitations
+
+Answer correctness, continuation-protocol correctness, and active envelope adoption
+are reported separately. Each condition has only three runs on one deterministic
+fixture and one model, so differences are descriptive rather than general claims.
+Claude Code event structure may also change across CLI versions.
