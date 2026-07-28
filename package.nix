@@ -1,7 +1,11 @@
 {
   lib,
-  stdenvNoCC,
+  clangStdenv,
   bun,
+  cmake,
+  nodejs,
+  zlib,
+  curl,
   versionCheckHook,
   # Not in nixpkgs — pass bun2nix.packages.${system}.default from the flake.
   bun2nix,
@@ -14,45 +18,69 @@ let
     fileset = lib.fileset.unions [
       ./package.json
       ./bun.lock
+      ./tsconfig.json
       ./src
+      ./scripts/build-scriptc.ts
+      ./scripts/gen-agent-context.ts
     ];
   };
 in
-stdenvNoCC.mkDerivation {
+# clangStdenv (not stdenvNoCC): ax compiles to a native executable with
+# scriptc, which invokes `clang` by name — the default Linux stdenv provides
+# gcc and no clang, and the build fails with `spawn clang ENOENT`. --dynamic
+# additionally builds the embedded JavaScript engine from the vendored sources
+# in node_modules/@scriptc/runtime with CMake. Everything it compiles is
+# vendored, so the build stays offline.
+clangStdenv.mkDerivation {
   pname = packageJson.name;
   inherit (packageJson) version;
   inherit src;
 
-  nativeBuildInputs = [ bun2nix.hook ];
+  nativeBuildInputs = [
+    bun2nix.hook
+    bun
+    # scriptc's CLI runs on Node, not Bun: typescript@7's synchronous RPC
+    # channel reads `stdout._handle.fd` off a spawned child, which Bun does not
+    # expose. Its own package.json asks for node >= 20.
+    nodejs
+    cmake
+  ];
+
+  # The generated C links the HOST's zlib and libcurl (the vendored copies under
+  # @scriptc/runtime serve the cross-compile path only), so under nix's stdenv
+  # they have to be real inputs rather than SDK-implicit ones.
+  buildInputs = [
+    zlib
+    curl
+  ];
 
   bunDeps = bun2nix.fetchBunDeps {
     bunNix = ./nix/bun.nix;
   };
 
-  # The published bin is src/index.ts run under bun — no bundle step.
+  # The compiler ships as a devDependency, so --production would drop it.
   dontUseBunBuild = true;
-  # Same as the hook's per-platform defaults, plus --production to keep
-  # devDependencies out of the runtime closure.
   bunInstallFlags = [
     "--linker=isolated"
-    "--production"
   ]
-  ++ lib.optionals stdenvNoCC.hostPlatform.isDarwin [ "--backend=symlink" ];
+  ++ lib.optionals clangStdenv.hostPlatform.isDarwin [ "--backend=symlink" ];
   # postinstall regenerates bun.nix, which is pointless (and fails) in
   # the sandbox.
   dontRunLifecycleScripts = true;
 
+  # cmake's setup hook would otherwise try to configure the source root, which
+  # has no CMakeLists.txt — scriptc invokes cmake itself.
+  dontUseCmakeConfigure = true;
+
+  buildPhase = ''
+    runHook preBuild
+    bun run scripts/build-scriptc.ts ax
+    runHook postBuild
+  '';
+
   installPhase = ''
     runHook preInstall
-
-    mkdir -p $out/share/ax $out/bin
-    cp -r src node_modules package.json $out/share/ax/
-
-    substituteInPlace $out/share/ax/src/index.ts \
-      --replace-fail "#!/usr/bin/env bun" "#!${bun}/bin/bun"
-    chmod +x $out/share/ax/src/index.ts
-    ln -s $out/share/ax/src/index.ts $out/bin/ax
-
+    install -Dm755 ax $out/bin/ax
     runHook postInstall
   '';
 
@@ -62,7 +90,7 @@ stdenvNoCC.mkDerivation {
   meta = {
     inherit (packageJson) description homepage;
     license = lib.getLicenseFromSpdxId packageJson.license;
-    mainProgram = builtins.head (builtins.attrNames packageJson.bin);
+    mainProgram = "ax";
     platforms = import ./nix/systems.nix;
   };
 }

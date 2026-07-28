@@ -7,6 +7,55 @@ import { compileWhere } from './expr'
 
 type Step = { kind: 'key'; name: string } | { kind: 'iter' } | { kind: 'index'; i: number }
 
+// jq's type vocabulary, which `typeof` alone cannot produce: it answers
+// 'object' for both null and arrays. The non-JSON arms are here because the
+// input is `unknown` — a JSON document never reaches them.
+export type JqType =
+  | 'null'
+  | 'array'
+  | 'object'
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'undefined'
+  | 'bigint'
+  | 'symbol'
+  | 'function'
+
+/**
+ * The jq type name of a value, used for dispatch and for error messages that
+ * read like jq's own ("cannot index array with ...").
+ *
+ * @example
+ * typeOf(null) // => 'null'
+ * typeOf([1])  // => 'array'   (typeof would say 'object')
+ */
+export function typeOf(v: unknown): JqType {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'array'
+  return typeof v
+}
+
+// TSV for uniform rows: keys once in a header, values per line. Token-cheap
+// and pipeable into awk/sort. The compiled CLI uses the concrete renderer in
+// tsv.ts; this one keeps the jq surface's `unknown` values.
+export function toTsv(result: unknown): string[] {
+  const arr = Array.isArray(result) ? result : [result]
+  if (arr.length === 0) return []
+  const cell = (v: unknown) =>
+    v === null || v === undefined
+      ? ''
+      : typeOf(v) === 'object' || Array.isArray(v)
+        ? JSON.stringify(v)
+        : String(v).replace(/[\t\n]/g, ' ')
+  if (typeOf(arr[0]) !== 'object') return arr.map(cell)
+  const headers = Object.keys(arr[0] as object)
+  return [
+    headers.join('\t'),
+    ...arr.map((row) => headers.map((h) => cell((row as Record<string, unknown>)[h])).join('\t')),
+  ]
+}
+
 function parsePath(path: string): Step[] {
   // jq-compat: `.[0]` / `.["k"]` / `.[]` are the same as `[0]` / `["k"]` / `[]`.
   path = path.replace(/\.(?=\[)/g, '')
@@ -25,12 +74,6 @@ function parsePath(path: string): Step[] {
   }
   if (last !== path.length) fail(`cannot parse path near: ${path.slice(last)}`)
   return steps
-}
-
-export function typeOf(v: unknown): string {
-  if (v === null) return 'null'
-  if (Array.isArray(v)) return 'array'
-  return typeof v
 }
 
 function apply(stream: unknown[], step: Step): unknown[] {
@@ -102,25 +145,6 @@ function pick(result: unknown, spec: string): unknown {
     return Object.fromEntries(fields.map((f) => [f, dig(row, f)]))
   }
   return Array.isArray(result) ? result.map(project) : project(result)
-}
-
-// TSV for uniform rows: keys once in a header, values per line. Token-cheap
-// and pipeable into awk/sort.
-export function toTsv(result: unknown): string[] {
-  const arr = Array.isArray(result) ? result : [result]
-  if (arr.length === 0) return []
-  const cell = (v: unknown) =>
-    v === null || v === undefined
-      ? ''
-      : typeOf(v) === 'object' || Array.isArray(v)
-        ? JSON.stringify(v)
-        : String(v).replace(/[\t\n]/g, ' ')
-  if (typeOf(arr[0]) !== 'object') return arr.map(cell)
-  const headers = Object.keys(arr[0] as object)
-  return [
-    headers.join('\t'),
-    ...arr.map((row) => headers.map((h) => cell((row as Record<string, unknown>)[h])).join('\t')),
-  ]
 }
 
 // Shared output handling for the query commands.

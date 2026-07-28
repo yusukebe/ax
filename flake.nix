@@ -19,7 +19,8 @@
       packages = forAllSystems (
         system:
         let
-          ax = nixpkgs.legacyPackages.${system}.callPackage ./package.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          ax = pkgs.callPackage ./package.nix {
             bun2nix = bun2nix.packages.${system}.default;
           };
         in
@@ -34,6 +35,8 @@
 
       formatter = forAllSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
+      # Building ax compiles the embedded JavaScript engine from source, which
+      # costs minutes per system — `nix flake check` is not quick here.
       checks = forAllSystems (system: {
         build = packages.${system}.ax;
       });
@@ -48,7 +51,12 @@
             packages = [
               pkgs.bun
               bun2nix.packages.${system}.default
-            ];
+              # `bun run build` shells out to cmake and clang. On Darwin
+              # clang comes from the Xcode toolchain — the nix wrapper does not
+              # find the macOS SDK headers the embedded engine needs (zlib.h).
+              pkgs.cmake
+            ]
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.clang ];
 
             shellHook = ''
               # Install dependencies only if node_modules is missing or older

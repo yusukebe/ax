@@ -9,16 +9,74 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  # One runner per target: ax needs scriptc's --dynamic (linkedom and fetch run
+  # in the embedded JavaScript engine), and a --dynamic build is host-native —
+  # the engine archive is built per target and cross-compiling one is not
+  # supported. That rules out the old single-runner --target sweep.
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: darwin-arm64, builder: scriptc }
+          - { os: macos-15-intel, target: darwin-x64, builder: scriptc }
+          - { os: ubuntu-latest, target: linux-x64, builder: scriptc }
+          - { os: ubuntu-24.04-arm, target: linux-arm64, builder: scriptc }
+          # Windows ships a bun-compiled binary: scriptc has not ported the
+          # socket stack (net/http/https/tls), which is where ax's fetch lives.
+          - { os: windows-latest, target: windows-x64, builder: bun, ext: .exe }
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.3.14
-
+      # scriptc's compiler runs on Node, not Bun.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: matrix.builder == 'scriptc'
+        with:
+          node-version: 22
       - run: bun install --frozen-lockfile
+
+      - name: Install the C toolchain scriptc drives (Linux)
+        if: matrix.builder == 'scriptc' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake
+
+      - name: Install the C toolchain scriptc drives (macOS)
+        if: matrix.builder == 'scriptc' && runner.os == 'macOS'
+        run: brew install cmake
+
+      - name: Compile (scriptc)
+        if: matrix.builder == 'scriptc'
+        run: bun run build "ax-${{ matrix.target }}${{ matrix.ext }}"
+
+      - name: Compile (bun)
+        if: matrix.builder == 'bun'
+        run: bun build src/index.ts --compile --outfile "ax-${{ matrix.target }}${{ matrix.ext }}"
+
+      # Never publish a binary that has not answered correctly on its own
+      # platform.
+      - name: Smoke test
+        env:
+          AX: ./ax-${{ matrix.target }}${{ matrix.ext }}
+        run: bash .github/scripts/smoke.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ax-${{ matrix.target }}
+          path: ax-${{ matrix.target }}${{ matrix.ext }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Tag must match the version in package.json
         run: |
@@ -28,15 +86,26 @@ jobs:
             exit 1
           fi
 
-      - name: Build binaries for all targets
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect binaries
         run: |
           mkdir -p dist
-          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64 windows-x64; do
-            out="dist/ax-$t"
-            [ "$t" = "windows-x64" ] && out="$out.exe"
-            bun build src/index.ts --compile --target="bun-$t" --outfile "$out"
-          done
+          find artifacts -type f -name 'ax-*' -exec mv {} dist/ \;
+          chmod +x dist/ax-*
           ls -lh dist/
+          missing=
+          for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
+            [ -f "dist/ax-$t" ] || missing="$missing ax-$t"
+          done
+          [ -f dist/ax-windows-x64.exe ] || missing="$missing ax-windows-x64.exe"
+          if [ -n "$missing" ]; then
+            echo "missing release assets:$missing" >&2
+            exit 1
+          fi
 
       - name: Generate checksums
         run: |

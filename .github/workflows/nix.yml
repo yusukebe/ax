@@ -6,7 +6,6 @@ name: Nix flake
 
 on:
   push:
-    branches: [main]
     paths:
       - '**.nix'
       - 'flake.lock'
@@ -39,7 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -60,8 +59,17 @@ jobs:
       - name: nix flake check --all-systems
         run: nix flake check --all-systems --no-build
 
+      # Compiles the embedded JavaScript engine from the vendored sources, so
+      # this is minutes rather than seconds.
       - name: nix build .#default
         run: nix build .#default --print-build-logs
 
       - name: nix run .#default -- --version
         run: nix run .#default -- --version
+
+      - name: nix run .#default -- --md
+        run: |
+          printf '<article><h1>Title</h1><p>Hello</p></article>' > page.html
+          got=$(nix run .#default -- page.html --md)
+          want=$(printf '# Title\n\nHello')
+          [ "$got" = "$want" ] || { printf 'got:\n%s\nwant:\n%s\n' "$got" "$want"; exit 1; }

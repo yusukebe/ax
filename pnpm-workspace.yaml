@@ -1,0 +1,2 @@
+allowBuilds:
+  bun2nix: true

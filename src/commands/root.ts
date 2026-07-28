@@ -1,8 +1,14 @@
-import { rename } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
 import { parseHTML } from 'linkedom'
 import { parseArgs, num } from '../lib/args'
+import { toArray, toStrings, nodeId, type DomNode } from '../lib/dom'
+import type { FlagValue } from '../lib/args'
+import type { ReadSourceOptions } from '../lib/io'
 import {
   readSource,
+  readStdinBytes,
+  readStdinText,
   fail,
   guardsFromFlags,
   readBodyCapped,
@@ -13,7 +19,7 @@ import {
 } from '../lib/io'
 import { emitLines, emitJson, emitJsonEnvelope, writeStdoutFlushed } from '../lib/emit'
 import { compileWhere } from '../lib/expr'
-import { toTsv } from '../lib/query'
+import { toTsv } from '../lib/tsv'
 
 export const rootHelp = `ax — the AI-era curl: fetch, discover, extract. One command.
 
@@ -73,6 +79,10 @@ examples:
   ax page.html 'table.stats' --table --where 'Stars >= 30000'
   ax https://api.site.example/things -H 'authorization: Bearer x'`
 
+// num()'s constraint slot needs an exact (message: string) => never shape;
+// fail's optional `hint` keeps the function itself from flowing as a value.
+const failWith = (message: string): never => fail(message)
+
 type Field = { name: string; sel: string; attr: string | null }
 
 function parseRowSpec(spec: string): Field[] {
@@ -110,7 +120,7 @@ const KEEP_HEADERS = new Set([
 
 const collapse = (s: string) => s.trim().replace(/\s+/g, ' ')
 
-function requestHeaders(flags: Record<string, unknown>): Record<string, string> {
+function requestHeaders(flags: Record<string, FlagValue>): Record<string, string> {
   const headers: Record<string, string> = {}
   for (const h of (flags.header ?? []) as string[]) {
     const idx = h.indexOf(':')
@@ -126,7 +136,7 @@ function requestHeaders(flags: Record<string, unknown>): Record<string, string> 
 // User-supplied selectors reach css-what/linkedom, which throw plain Errors
 // (with node_modules stack traces) on malformed CSS — never let those leak
 // past the fail() contract of a structured, single-line stderr message.
-function query1(root: ParentNode, sel: string): Element | null {
+function query1(root: DomNode, sel: string): DomNode | null {
   try {
     return root.querySelector(sel)
   } catch (e) {
@@ -134,9 +144,9 @@ function query1(root: ParentNode, sel: string): Element | null {
   }
 }
 
-function queryAll(root: ParentNode, sel: string): Element[] {
+function queryAll(root: DomNode, sel: string): DomNode[] {
   try {
-    return [...root.querySelectorAll(sel)]
+    return toArray(root.querySelectorAll(sel))
   } catch (e) {
     fail(`bad selector: ${sel} (${(e as Error).message})`)
   }
@@ -167,28 +177,35 @@ function escapeCssIdentifier(value: string): string {
       (code >= 65 && code <= 90) ||
       (code >= 97 && code <= 122)
     ) {
-      result += value[index]
+      result += value.charAt(index)
     } else {
-      result += `\\${value[index]}`
+      result += `\\${value.charAt(index)}`
     }
   }
 
   return result
 }
 
-function signature(el: Element): string {
-  const classes = [...el.classList].map(escapeCssIdentifier)
-  return el.localName + (classes.length ? '.' + classes.join('.') : '')
+function signature(el: DomNode): string {
+  const classes = toStrings(el.classList).map(escapeCssIdentifier)
+  return (el.localName as string) + (classes.length ? '.' + classes.join('.') : '')
 }
 
-function selectorPath(el: Element): string {
+function selectorPath(el: DomNode): string {
+  // Collected leaf-first and reversed at the end: unshift has no lowering.
   const parts: string[] = []
-  let node: Element | null = el
+  let node: DomNode | null = el
   while (node && node.localName !== 'body' && node.localName !== 'html') {
-    parts.unshift(node.id ? `${node.localName}#${escapeCssIdentifier(node.id)}` : signature(node))
+    parts.push(
+      node.id
+        ? `${node.localName as string}#${escapeCssIdentifier(node.id as string)}`
+        : signature(node)
+    )
     node = node.parentElement
   }
-  return parts.join(' > ')
+  const ordered: string[] = []
+  for (let i = parts.length - 1; i >= 0; i--) ordered.push(parts[i]!)
+  return ordered.join(' > ')
 }
 
 // Tag semantics for --md, built from disjoint tiers: each tag is listed
@@ -285,48 +302,59 @@ export const MD_TAG_TIERS = {
 // are pruned so hidden markup (a <p> inside <noscript>, form internals)
 // can't affect the answer; the optional memo keeps the overall walk linear
 // on deeply nested markup.
-function hasDescendantIn(
-  el: Element,
-  tags: Set<string>,
-  cache?: WeakMap<Element, boolean>
-): boolean {
-  const cached = cache?.get(el)
+function hasDescendantIn(el: DomNode, tags: Set<string>): boolean {
+  for (const child of el.children) {
+    if (SKIP_TAGS.has(child.localName as string)) continue
+    if (tags.has(child.localName as string) || hasDescendantIn(child, tags)) return true
+  }
+  return false
+}
+
+// Same walk, memoized. Split from the plain form because an optional Map
+// parameter is a union with no runtime narrowing test, and keyed by nodeId
+// because scriptc's Map takes only string and number keys (weak collections
+// are unavailable outright).
+function hasDescendantInMemo(el: DomNode, tags: Set<string>, cache: Map<number, boolean>): boolean {
+  const key = nodeId(el)
+  const cached = cache.get(key)
   if (cached !== undefined) return cached
   let found = false
   for (const child of el.children) {
-    if (SKIP_TAGS.has(child.localName)) continue
-    if (tags.has(child.localName) || hasDescendantIn(child, tags, cache)) {
+    if (SKIP_TAGS.has(child.localName as string)) continue
+    if (tags.has(child.localName as string) || hasDescendantInMemo(child, tags, cache)) {
       found = true
       break
     }
   }
-  cache?.set(el, found)
+  cache.set(key, found)
   return found
 }
 
-const blockDescendantCache = new WeakMap<Element, boolean>()
-const hasBlockDescendant = (el: Element) => hasDescendantIn(el, BLOCK_TAGS, blockDescendantCache)
+const blockDescendantCache = new Map<number, boolean>()
+const hasBlockDescendant = (el: DomNode) =>
+  hasDescendantInMemo(el, BLOCK_TAGS, blockDescendantCache)
 
-const hasStructuredContent = (el: Element) => hasDescendantIn(el, STRUCTURED_TAGS)
+const hasStructuredContent = (el: DomNode) => hasDescendantIn(el, STRUCTURED_TAGS)
 
 // Text a browser would actually show for el — used to rescue a link label
 // when the normal skip leaves nothing (e.g. <a><button>Buy</button></a>).
-function visibleText(el: Element): string {
+function visibleText(el: DomNode): string {
   let out = ''
   for (const child of el.childNodes) {
-    if (child.nodeType === 3) out += (child as Text).data
+    if (child.nodeType === 3) out += child.data as string
     if (child.nodeType !== 1) continue
-    const ce = child as Element
-    if (ce.localName === 'br') {
+    const ce: DomNode = child
+    const tag = ce.localName as string
+    if (tag === 'br') {
       out += ' '
-    } else if (ce.localName === 'svg') {
+    } else if (tag === 'svg') {
       // An icon's accessible name (<svg><title>) is the label a screen
       // reader announces — use it before giving up on the link text.
-      out += (ce.querySelector('title')?.textContent ?? '') || ' '
-    } else if (INVISIBLE_TAGS.has(ce.localName)) {
-      if (!ZERO_FOOTPRINT_TAGS.has(ce.localName)) out += ' '
+      out += ((ce.querySelector('title')?.textContent as string | null) ?? '') || ' '
+    } else if (INVISIBLE_TAGS.has(tag)) {
+      if (!ZERO_FOOTPRINT_TAGS.has(tag)) out += ' '
     } else {
-      out += ce.localName === 'img' ? (ce.getAttribute('alt') ?? '') : visibleText(ce)
+      out += tag === 'img' ? ((ce.getAttribute('alt') as string | null) ?? '') : visibleText(ce)
     }
   }
   return out
@@ -335,42 +363,43 @@ function visibleText(el: Element): string {
 // A link's markdown label: its inline rendering, or — when the normal skip
 // leaves nothing — any text a browser would actually show (button labels,
 // svg titles, img alt).
-const linkLabel = (el: Element) => collapse(inlineToMd(el)) || collapse(visibleText(el))
+const linkLabel = (el: DomNode) => collapse(inlineToMd(el)) || collapse(visibleText(el))
 
 // Text of a <pre> with SKIP_TAGS subtrees pruned but whitespace preserved —
 // textContent would leak <script>/<style> source into the code fence.
-function rawText(el: Element): string {
+function rawText(el: DomNode): string {
   let out = ''
   for (const child of el.childNodes) {
-    if (child.nodeType === 3) out += (child as Text).data
-    else if (child.nodeType === 1 && !SKIP_TAGS.has((child as Element).localName))
-      out += rawText(child as Element)
+    if (child.nodeType === 3) out += child.data as string
+    else if (child.nodeType === 1 && !SKIP_TAGS.has(child.localName as string))
+      out += rawText(child)
   }
   return out
 }
 
 // HTML table model, shared by --md and --table: rows and cells nested in an
 // inner table belong to that table, not the one being read.
-const directRows = (table: Element) =>
-  [...table.querySelectorAll('tr')].filter((tr) => tr.closest('table') === table)
-const directCells = (tr: Element) =>
-  [...tr.children].filter((c) => c.localName === 'th' || c.localName === 'td')
+const directRows = (table: DomNode) =>
+  toArray(table.querySelectorAll('tr')).filter((tr) => tr.closest('table') === table)
+const directCells = (tr: DomNode) =>
+  toArray(tr.children).filter((c) => c.localName === 'th' || c.localName === 'td')
 
 // --md: readable main content as markdown — the docs-reading path.
 // Convert a single inline-context node to markdown, turning <a> into
 // [text](url) and skipping SKIP_TAGS content wherever it appears.
-function inlineNodeToMd(node: Node): string {
-  if (node.nodeType === 3) return (node as Text).data
+function inlineNodeToMd(node: DomNode): string {
+  if (node.nodeType === 3) return node.data as string
   if (node.nodeType !== 1) return ''
-  const el = node as Element
+  const el: DomNode = node
+  const tag = el.localName as string
   // A dropped widget still separates the words around it on screen
   // (Press<button>OK</button>to continue), so it becomes a space, which
   // collapse() later folds into the surrounding whitespace.
-  if (SKIP_TAGS.has(el.localName)) return ZERO_FOOTPRINT_TAGS.has(el.localName) ? '' : ' '
-  if (el.localName === 'a') {
+  if (SKIP_TAGS.has(tag)) return ZERO_FOOTPRINT_TAGS.has(tag) ? '' : ' '
+  if (tag === 'a') {
     const raw = inlineToMd(el)
     const label = linkLabel(el)
-    const href = el.getAttribute('href') ?? ''
+    const href = (el.getAttribute('href') as string | null) ?? ''
     // No label anywhere (icon-only link with no alt/title): emit the raw
     // inline text rather than [](url) litter, matching the block branch.
     if (!href || !label) return raw
@@ -380,10 +409,10 @@ function inlineNodeToMd(node: Node): string {
     const trail = /\s$/.test(raw) ? ' ' : ''
     return `${lead}[${label}](${href})${trail}`
   }
-  if (el.localName === 'br') return ' '
-  if (el.localName === 'img') {
-    const alt = el.getAttribute('alt') ?? ''
-    const src = el.getAttribute('src') ?? ''
+  if (tag === 'br') return ' '
+  if (tag === 'img') {
+    const alt = (el.getAttribute('alt') as string | null) ?? ''
+    const src = (el.getAttribute('src') as string | null) ?? ''
     return alt && src && !src.startsWith('data:') ? `![${alt}](${src})` : alt
   }
   // Pad block-level children so adjacent blocks rendered in an inline
@@ -391,20 +420,19 @@ function inlineNodeToMd(node: Node): string {
   // into one word.
   const inner = inlineToMd(el)
   const isBlockish =
-    BLOCK_TAGS.has(el.localName) ||
-    ['tr', 'td', 'th', 'caption', 'thead', 'tbody', 'tfoot'].includes(el.localName)
+    BLOCK_TAGS.has(tag) || ['tr', 'td', 'th', 'caption', 'thead', 'tbody', 'tfoot'].includes(tag)
   return isBlockish ? ` ${inner} ` : inner
 }
 
-function inlineToMd(el: Element): string {
+function inlineToMd(el: DomNode): string {
   let out = ''
   for (const child of el.childNodes) out += inlineNodeToMd(child)
   return out
 }
 
-function toMarkdown(root: Element): string {
+function toMarkdown(root: DomNode): string {
   const out: string[] = []
-  const walk = (el: Element) => {
+  const walk = (el: DomNode) => {
     let inline = ''
     const flush = () => {
       const text = collapse(inline)
@@ -413,12 +441,12 @@ function toMarkdown(root: Element): string {
     }
     for (const child of el.childNodes) {
       if (child.nodeType === 3) {
-        inline += (child as Text).data
+        inline += child.data as string
         continue
       }
       if (child.nodeType !== 1) continue
-      const ce = child as Element
-      const tag = ce.localName
+      const ce: DomNode = child
+      const tag = ce.localName as string
       if (SKIP_TAGS.has(tag)) {
         if (!ZERO_FOOTPRINT_TAGS.has(tag)) inline += ' '
         continue
@@ -434,7 +462,7 @@ function toMarkdown(root: Element): string {
       if (/^h[1-6]$/.test(tag) || tag === 'p' || tag === 'li' || tag === 'blockquote') {
         const text = collapse(inlineToMd(ce))
         if (/^h[1-6]$/.test(tag) && text) {
-          out.push(`${'#'.repeat(Number(tag[1]))} ${text}`)
+          out.push(`${'#'.repeat(Number(tag.charAt(1)))} ${text}`)
         } else if (tag === 'p' && text) {
           out.push(text)
         } else if (tag === 'li' && text) {
@@ -447,7 +475,13 @@ function toMarkdown(root: Element): string {
       } else if (tag === 'pre') {
         out.push('```\n' + rawText(ce).trim() + '\n```')
       } else if (tag === 'table') {
-        const caption = [...ce.children].find((c) => c.localName === 'caption')
+        let caption: DomNode | null = null
+        for (const c of toArray(ce.children)) {
+          if (c.localName === 'caption') {
+            caption = c
+            break
+          }
+        }
         const capText = caption ? collapse(inlineToMd(caption)) : ''
         if (capText) out.push(capText)
         const table = directRows(ce)
@@ -461,7 +495,7 @@ function toMarkdown(root: Element): string {
         // [text](url) so the href isn't silently lost. Links wrapping
         // structured content still recurse below.
         const text = linkLabel(ce)
-        if (text) out.push(`[${text}](${ce.getAttribute('href')})`)
+        if (text) out.push(`[${text}](${ce.getAttribute('href') as string})`)
         else walk(ce)
       } else {
         walk(ce)
@@ -474,7 +508,7 @@ function toMarkdown(root: Element): string {
     root.querySelector('main') ??
     root.querySelector('body') ??
     root
-  walk(main as Element)
+  walk(main)
   return out.join('\n\n')
 }
 
@@ -482,19 +516,19 @@ function toMarkdown(root: Element): string {
 // leading @ as "read this file" (@- means stdin); --data-raw never does —
 // that's its entire reason to exist. -d additionally strips CR/LF from file
 // contents (curl's documented --data behavior); --data-binary preserves them.
-async function readDataFile(ref: string, binary = false): Promise<string | ArrayBuffer> {
+async function readDataFile(ref: string, binary = false): Promise<string | Uint8Array> {
   if (ref === '-') {
-    return binary ? await Bun.stdin.arrayBuffer() : await Bun.stdin.text()
+    return binary ? readStdinBytes() : readStdinText()
   }
   if (ref === '') {
     fail(`couldn't read data from file ""`, '--data-raw sends the literal string')
   }
-  const file = Bun.file(ref)
-  if (!(await file.exists())) {
+  const exists = (await stat(ref).catch(() => null)) !== null
+  if (!exists) {
     fail(`couldn't read data from file "${ref}"`, '--data-raw sends the literal string')
   }
   try {
-    return binary ? await file.arrayBuffer() : await file.text()
+    return binary ? new Uint8Array(await readFile(ref)) : await readFile(ref, 'utf8')
   } catch (e) {
     fail(
       `couldn't read data from file "${ref}": ${(e as Error).message}`,
@@ -503,7 +537,7 @@ async function readDataFile(ref: string, binary = false): Promise<string | Array
   }
 }
 
-async function readDataArg(value: string, stripNewlines: boolean): Promise<string | ArrayBuffer> {
+async function readDataArg(value: string, stripNewlines: boolean): Promise<string | Uint8Array> {
   if (!value.startsWith('@')) return value
   const data = await readDataFile(value.slice(1), !stripNewlines)
   return stripNewlines && typeof data === 'string' ? data.replace(/[\r\n]/g, '') : data
@@ -512,8 +546,8 @@ async function readDataArg(value: string, stripNewlines: boolean): Promise<strin
 // -d wins over --data-raw wins over --data-binary when more than one is
 // given, matching the precedence of the old .find([data, raw, binary]).
 async function resolveData(
-  flags: Record<string, unknown>
-): Promise<string | ArrayBuffer | undefined> {
+  flags: Record<string, FlagValue>
+): Promise<string | Uint8Array | undefined> {
   if (typeof flags.data === 'string') return await readDataArg(flags.data, true)
   if (typeof flags['data-raw'] === 'string') return flags['data-raw']
   if (typeof flags['data-binary'] === 'string')
@@ -526,11 +560,11 @@ async function resolveData(
 // none, infer the method, and translate -k into Bun's fetch tls option.
 // Mutates headers in place (matching resolveData's existing call site).
 async function curlRequestInit(
-  flags: Record<string, unknown>,
+  flags: Record<string, FlagValue>,
   headers: Record<string, string>
 ): Promise<{
   method: string
-  body: string | ArrayBuffer | undefined
+  body: string | Uint8Array | undefined
   tls: { rejectUnauthorized: boolean } | undefined
 }> {
   const body = await resolveData(flags)
@@ -566,7 +600,7 @@ async function curlRequestInit(
 }
 
 function isJsonContentType(value: string | null): boolean {
-  const mediaType = ((value ?? '').split(';', 1)[0] ?? '').trim().toLowerCase()
+  const mediaType = ((value ?? '').split(';')[0] ?? '').trim().toLowerCase()
   const slash = mediaType.indexOf('/')
   if (slash === -1) return false
   const subtype = mediaType.slice(slash + 1)
@@ -619,19 +653,24 @@ export async function root(argv: string[]) {
   })
   if (flags.help || _.length === 0) return console.log(rootHelp)
 
-  const [src, selector] = _
+  const src = _[0]
+  const selector = _.length > 1 ? _[1] : undefined
   const opts = {
-    limit: num(flags.limit, 50, { flag: '--limit', kind: 'positive integer', fail }),
+    limit: num(flags.limit, 50, { flag: '--limit', kind: 'positive integer', fail: failWith }),
     all: flags.all === true,
-    budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
-    offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
+    budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail: failWith }),
+    offset: num(flags.offset, 0, {
+      flag: '--offset',
+      kind: 'non-negative integer',
+      fail: failWith,
+    }),
   }
-  const envelopeModifiers = [
+  const envelopeModifiers: [string, FlagValue][] = [
     ['--attr', flags.attr],
     ['--row', flags.row],
     ['--locate', flags.locate],
     ['--where', flags.where],
-  ] as const
+  ]
   const jsonEnvelope = flags['json-envelope'] === true
   const optionsEnd = argv.indexOf('--')
   const missingEnvelopeValue =
@@ -641,6 +680,7 @@ export async function root(argv: string[]) {
         (arg, index) =>
           (optionsEnd === -1 || index < optionsEnd) &&
           arg === '--json-envelope' &&
+          index > 0 &&
           argv[index - 1] === flag
       )
     )?.[0]
@@ -650,8 +690,12 @@ export async function root(argv: string[]) {
       'pass the modifier value before --json-envelope'
     )
   }
-  const emitStructured = (value: unknown[]) =>
-    jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
+  // Spelled as statements, not a ternary: a ternary over two void calls trips
+  // an internal compiler error in scriptc 0.0.17 (SC9001).
+  const emitStructured = (value: unknown[]) => {
+    if (jsonEnvelope) emitJsonEnvelope(value, opts)
+    else emitJson(value, opts)
+  }
   const isUrl = /^https?:\/\//.test(src!)
   const envelopeConflict =
     flags.md === true
@@ -698,15 +742,19 @@ export async function root(argv: string[]) {
     const guards = guardsFromFlags(flags)
     const deadline = Date.now() + guards.timeoutMs
     const started = performance.now()
-    let res: Response
+    // Untyped for the same two reasons as in readSource: `tls` is outside the
+    // standard RequestInit, and the response's streaming surface is only
+    // reachable through a dynamic value.
+    const init: any = {
+      method,
+      headers,
+      body: data,
+      signal: AbortSignal.timeout(guards.timeoutMs),
+      tls,
+    }
+    let res: any
     try {
-      res = await fetch(src!, {
-        method,
-        headers,
-        body: data,
-        signal: AbortSignal.timeout(guards.timeoutMs),
-        tls,
-      })
+      res = await fetch(src!, init)
     } catch (e) {
       timeoutError(e, guards.timeoutMs)
       return fail(`request failed: ${(e as Error).message}`, `is the server running at ${src}?`)
@@ -732,7 +780,8 @@ export async function root(argv: string[]) {
             {
               status: res.status,
               ok: false,
-              ...responseTarget,
+              url: responseTarget.url,
+              redirected: responseTarget.redirected,
               ms,
               saved: null,
               note: '-f: error body not saved',
@@ -743,19 +792,15 @@ export async function root(argv: string[]) {
         )
         exitPerFail()
       }
-      // Stream to a temp file next to the target, then atomically rename.
-      // FileSink does not truncate an existing file (a shorter download used
-      // to leave the old file's tail spliced onto the new bytes), and the
-      // rename means a failed or timed-out transfer leaves whatever sat at
-      // -o before completely untouched — no partials, no franken-files.
-      const tmpOut = `${flags.output}.axtmp-${process.pid}`
-      let sink: Bun.FileSink
-      try {
-        sink = Bun.file(tmpOut).writer()
-      } catch (e) {
-        return fail(`cannot write to ${flags.output}: ${(e as Error).message}`)
-      }
+      // The body is collected in memory and written once, at the end. Neither
+      // an incremental file write nor rename has a scriptc lowering, so the
+      // old stream-to-temp-then-rename dance is unavailable — but writing only
+      // after a complete transfer keeps the property that actually matters:
+      // a failed or timed-out download leaves whatever sat at -o untouched,
+      // and a shorter download never splices onto the old file's tail. The
+      // buffer is bounded by --max-bytes, the same cap the stream enforced.
       let written = 0
+      const parts: Uint8Array[] = []
       try {
         const reader = res.body?.getReader()
         if (reader) {
@@ -764,36 +809,41 @@ export async function root(argv: string[]) {
             if (done || !value) break
             if (value.byteLength > guards.maxBytes - written) {
               await reader.cancel().catch(() => {})
-              await Promise.resolve(sink.end()).catch(() => {})
-              await Bun.file(tmpOut)
-                .delete()
-                .catch(() => {})
               return fail(
                 `download exceeded --max-bytes at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap; existing file at ${flags.output} untouched)`
               )
             }
-            sink.write(value)
-            written += value.byteLength
+            const len = value.byteLength as number
+            const chunk = new Uint8Array(len)
+            for (let i = 0; i < len; i++) chunk[i] = value[i] as number
+            parts.push(chunk)
+            written += len
           }
         }
-        await sink.end()
-        await rename(tmpOut, flags.output)
       } catch (e) {
-        await Promise.resolve(sink.end()).catch(() => {})
-        await Bun.file(tmpOut)
-          .delete()
-          .catch(() => {})
         timeoutError(e, guards.timeoutMs)
         return fail(
           `download failed: ${(e as Error).message} (existing file at ${flags.output} untouched)`
         )
+      }
+      try {
+        const all = new Uint8Array(written)
+        let off = 0
+        for (const part of parts) {
+          all.set(part, off)
+          off += part.byteLength
+        }
+        writeFileSync(flags.output, all)
+      } catch (e) {
+        return fail(`cannot write to ${flags.output}: ${(e as Error).message}`)
       }
       await writeStdoutFlushed(
         JSON.stringify(
           {
             status: res.status,
             ok: res.ok,
-            ...responseTarget,
+            url: responseTarget.url,
+            redirected: responseTarget.redirected,
             ms,
             saved: flags.output,
             bytes: written,
@@ -839,13 +889,14 @@ export async function root(argv: string[]) {
         /* keep text */
       }
     }
-    const allHeaders = Object.fromEntries(res.headers.entries())
+    const allHeaders: Record<string, string> = {}
+    for (const [k, v] of res.headers.entries()) allHeaders[k as string] = v as string
     let reportHeaders = allHeaders
     let omitted = 0
     if (flags.headers !== true) {
       reportHeaders = {}
-      for (const [k, v] of Object.entries(allHeaders)) {
-        if (KEEP_HEADERS.has(k) || k.startsWith('x-ratelimit')) reportHeaders[k] = v
+      for (const k in allHeaders) {
+        if (KEEP_HEADERS.has(k) || k.startsWith('x-ratelimit')) reportHeaders[k] = allHeaders[k]!
         else omitted++
       }
     }
@@ -854,21 +905,18 @@ export async function root(argv: string[]) {
         {
           status: res.status,
           ok: res.ok,
-          ...responseTarget,
+          url: responseTarget.url,
+          redirected: responseTarget.redirected,
           ms,
           headers: reportHeaders,
-          ...(omitted > 0 ? { headers_omitted: `${omitted} (--headers for all)` } : {}),
+          headers_omitted: omitted > 0 ? `${omitted} (--headers for all)` : undefined,
           body,
-          ...(capped.capped
-            ? {
-                download_capped: `stopped reading at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap)`,
-              }
-            : {}),
-          ...(truncated
-            ? {
-                body_truncated: `${raw.length - maxChars} of ${raw.length} chars hidden (--all or --budget T)`,
-              }
-            : {}),
+          download_capped: capped.capped
+            ? `stopped reading at ${guards.maxBytes} bytes (--max-bytes <n> raises the cap)`
+            : undefined,
+          body_truncated: truncated
+            ? `${raw.length - maxChars} of ${raw.length} chars hidden (--all or --budget T)`
+            : undefined,
         },
         null,
         2
@@ -909,13 +957,18 @@ export async function root(argv: string[]) {
       'ax: note: HEAD has no body to parse — treating as GET (drop the selector to see headers)\n'
     )
   }
-  const { document } = parseHTML(
-    await readSource(src, {
-      ...guardsFromFlags(flags),
-      headers,
-      ...(requestInit ?? {}),
-    })
-  )
+  const guards = guardsFromFlags(flags)
+  const sourceOptions: ReadSourceOptions = {
+    maxBytes: guards.maxBytes,
+    timeoutMs: guards.timeoutMs,
+    fresh: guards.fresh,
+    noCache: guards.noCache,
+    headers,
+    method: requestInit?.method,
+    body: requestInit?.body,
+    tls: requestInit?.tls,
+  }
+  const { document } = parseHTML(await readSource(src, sourceOptions))
   const wherePred = typeof flags.where === 'string' ? compileWhere(flags.where) : null
 
   // JS-shell diagnosis: a 200 with an SPA husk is the sneakiest "success".
@@ -928,18 +981,18 @@ export async function root(argv: string[]) {
     return null
   }
 
-  const scope = (): ParentNode => {
+  const scope = (): DomNode => {
     if (!selector) return document.querySelector('body') ?? document
     const el = query1(document, selector)
     if (!el) {
       const spa = spaNote()
       fail(`selector matched nothing: ${selector}`, spa ?? undefined)
     }
-    return el as ParentNode
+    return el
   }
 
   if (flags.md) {
-    const md = toMarkdown((document.querySelector('html') ?? document) as unknown as Element)
+    const md = toMarkdown(document.querySelector('html') ?? document)
     // --md carries a default token budget on top of --limit, because markdown
     // lines are cheap individually but a whole page adds up. It is only a
     // *default*: --all means all (never a truncation note pointing at the flag
@@ -969,14 +1022,15 @@ export async function root(argv: string[]) {
     const needle = flags.locate.toLowerCase()
     const hits: { selector: string; match: string }[] = []
     for (const el of scope().querySelectorAll('*')) {
-      const attrHit = el
-        .getAttributeNames()
-        .map((n) => [n, el.getAttribute(n) ?? ''] as const)
+      const attrHit = toStrings(el.getAttributeNames())
+        .map((n): [string, string] => [n, (el.getAttribute(n) as string | null) ?? ''])
         .find(([, v]) => v.toLowerCase().includes(needle))
-      const childHit = [...el.children].some((c) =>
-        (c.textContent ?? '').toLowerCase().includes(needle)
+      const childHit = toArray(el.children).some((c) =>
+        (((c.textContent as string | null) ?? '') as string).toLowerCase().includes(needle)
       )
-      const textHit = !childHit && (el.textContent ?? '').toLowerCase().includes(needle)
+      const textHit =
+        !childHit &&
+        (((el.textContent as string | null) ?? '') as string).toLowerCase().includes(needle)
       if (!attrHit && !textHit) continue
       const snippet = attrHit ? `${attrHit[0]}="${attrHit[1]}"` : collapse(el.textContent ?? '')
       hits.push({
@@ -989,29 +1043,44 @@ export async function root(argv: string[]) {
   }
 
   if (flags.table) {
+    // The predicate is spelled to return a real boolean: an `&&` over dynamic
+    // operands yields a dynamic value, which cannot flow into .filter().
     const tables = queryAll(document, selector ?? 'table').filter(
-      (el) => el.localName === 'table' || (el.querySelector('table') && el.localName !== 'table')
+      (el: DomNode): boolean =>
+        el.localName === 'table' || (el.querySelector('table') !== null && el.localName !== 'table')
     )
     const targets = tables.flatMap((el) =>
-      el.localName === 'table' ? [el] : [...el.querySelectorAll('table')]
+      el.localName === 'table' ? [el] : toArray(el.querySelectorAll('table'))
     )
     if (targets.length === 0) fail(`no <table> found${selector ? ` under: ${selector}` : ''}`)
     // Grid construction per the HTML table model: expand colspan/rowspan,
     // ignore rows of nested tables, consume leading all-<th> rows as header.
-    const parse = (table: Element) => {
+    const parse = (table: DomNode) => {
       const allRows = directRows(table)
-      if (allRows.length === 0) return { headers: [], rows: [] as Record<string, string | null>[] }
+      if (allRows.length === 0)
+        return { headers: [] as string[], rows: [] as Record<string, string | null>[] }
       const cellsOf = directCells
-      const grid: (string | undefined)[][] = allRows.map(() => [])
+      const grid: (string | undefined)[][] = allRows.map((): (string | undefined)[] => [])
+      // Reads and writes past a row's current end are explicit here: scriptc
+      // bounds-checks array indexing rather than answering undefined (read) or
+      // growing the array (write), so every slot is materialised first.
+      const at = (row: (string | undefined)[], i: number): string | undefined =>
+        i < row.length ? row[i] : undefined
+      const put = (row: (string | undefined)[], i: number, value: string) => {
+        while (row.length <= i) row.push(undefined)
+        row[i] = value
+      }
       allRows.forEach((tr, r) => {
         let c = 0
         for (const cell of cellsOf(tr)) {
-          while (grid[r]![c] !== undefined) c++
-          const text = collapse(cell.textContent ?? '')
-          const cs = Math.max(1, Number(cell.getAttribute('colspan')) || 1)
-          const rs = Math.max(1, Number(cell.getAttribute('rowspan')) || 1)
+          while (at(grid[r]!, c) !== undefined) c++
+          const text = collapse((cell.textContent as string | null) ?? '')
+          const colspan = (cell.getAttribute('colspan') as string | null) ?? ''
+          const rowspan = (cell.getAttribute('rowspan') as string | null) ?? ''
+          const cs = Math.max(1, Number(colspan) || 1)
+          const rs = Math.max(1, Number(rowspan) || 1)
           for (let dr = 0; dr < rs && r + dr < allRows.length; dr++) {
-            for (let dc = 0; dc < cs; dc++) grid[r + dr]![c + dc] = text
+            for (let dc = 0; dc < cs; dc++) put(grid[r + dr]!, c + dc, text)
           }
           c += cs
         }
@@ -1024,36 +1093,51 @@ export async function root(argv: string[]) {
       ) {
         headerRowCount++
       }
-      const width = Math.max(...grid.map((row) => row.length))
-      const named = Array.from({ length: width }, (_, i) =>
-        headerRowCount > 0 ? grid[0]![i] || `col${i}` : `col${i}`
-      )
+      let width = 0
+      for (const row of grid) width = Math.max(width, row.length)
+      const named: string[] = []
+      for (let i = 0; i < width; i++) {
+        named.push((headerRowCount > 0 ? at(grid[0]!, i) || `col${i}` : `col${i}`) as string)
+      }
       const seen = new Map<string, number>()
       const headers = named.map((h) => {
         const n = (seen.get(h) ?? 0) + 1
         seen.set(h, n)
         return n === 1 ? h : `${h}_${n}`
       })
-      const rows = grid
-        .slice(headerRowCount)
-        .map((cells) => Object.fromEntries(headers.map((h, i) => [h, cells[i] ?? null])))
-        .filter((r) => Object.values(r).some((v) => v))
+      const rows: Record<string, string | null>[] = []
+      for (const cells of grid.slice(headerRowCount)) {
+        const row: Record<string, string | null> = {}
+        let hasValue = false
+        headers.forEach((h, i) => {
+          const v = at(cells, i) ?? null
+          row[h] = v
+          if (v) hasValue = true
+        })
+        if (hasValue) rows.push(row)
+      }
       return { headers, rows }
     }
-    const parsed = targets.map(parse)
+    const parsed = targets.map((t: DomNode) => parse(t))
     const beforeWhere = parsed.length === 1 ? parsed[0]!.rows.length : 0
-    if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
+    if (wherePred) {
+      for (const p of parsed) p.rows = p.rows.filter((row) => wherePred(row))
+    }
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
     if (parsed.length === 1) rowStats(parsed[0]!.rows, wherePred ? beforeWhere : undefined)
     if (jsonEnvelope || flags.json || parsed.length > 1) return emitStructured(tableResult)
-    return emitLines(toTsv(tableResult), opts)
+    // Past the guard above there is exactly one table, so this is its rows.
+    return emitLines(toTsv(parsed[0]!.rows), opts)
   }
 
   if (!selector) fail('missing selector', 'ax <url|file|-> <selector>  (or --outline / --md)')
   const els = queryAll(document, selector)
   if (els.length === 0) fail(`selector matched nothing: ${selector}`, spaNote() ?? undefined)
 
-  if (flags.count) return void process.stdout.write(els.length + '\n')
+  if (flags.count) {
+    process.stdout.write(els.length + '\n')
+    return
+  }
 
   if (typeof flags.row === 'string') {
     const fields = parseRowSpec(flags.row)
@@ -1067,31 +1151,39 @@ export async function root(argv: string[]) {
       }
       return obj
     })
-    const rowResult = wherePred ? rows.filter(wherePred) : rows
+    const rowResult = wherePred ? rows.filter((row) => wherePred(row)) : rows
     rowStats(rowResult, wherePred ? rows.length : undefined)
     if (jsonEnvelope || flags.json) return emitStructured(rowResult)
     return emitLines(toTsv(rowResult), opts)
   }
 
   if (flags.json || jsonEnvelope) {
-    const rows = els.map((el) => ({
-      text: (el.textContent ?? '').trim(),
-      html: el.innerHTML,
-      attrs: Object.fromEntries(el.getAttributeNames().map((n) => [n, el.getAttribute(n) ?? ''])),
-    }))
+    const rows = els.map((el) => {
+      const attrs: Record<string, string> = {}
+      for (const n of toStrings(el.getAttributeNames())) {
+        attrs[n] = (el.getAttribute(n) as string | null) ?? ''
+      }
+      return {
+        text: (((el.textContent as string | null) ?? '') as string).trim(),
+        html: el.innerHTML as string,
+        attrs,
+      }
+    })
     return emitStructured(rows)
   }
 
   if (typeof flags.attr === 'string') {
-    const vals = els
-      .map((el) => el.getAttribute(flags.attr as string))
-      .filter((v): v is string => v !== null)
+    const vals: string[] = []
+    for (const el of els) {
+      const v = el.getAttribute(flags.attr as string) as string | null
+      if (v !== null) vals.push(v)
+    }
     return emitLines(vals, opts)
   }
 
   if (flags.html) {
     return emitLines(
-      els.map((el) => el.innerHTML),
+      els.map((el): string => el.innerHTML as string),
       opts
     )
   }
@@ -1112,8 +1204,12 @@ function rowStats(rows: Record<string, string | null>[], beforeWhere?: number) {
     return
   }
   const nulls: string[] = []
-  for (const key of Object.keys(rows[0]!)) {
-    const n = rows.filter((r) => r[key] === null || r[key] === '').length
+  for (const key in rows[0]!) {
+    const n = rows.filter((r) => {
+      const rec: any = r
+      const v = (rec[key] ?? null) as string | null
+      return v === null || v === ''
+    }).length
     if (n > 0) nulls.push(`${key}: ${n} empty`)
   }
   process.stderr.write(

@@ -1,3 +1,5 @@
+import { writeStdout } from './platform'
+
 // Output helpers. Default-cap large results so agents don't drown in tokens,
 // but NEVER truncate silently — always note what was dropped on stderr.
 const DEFAULT_LIMIT = 50
@@ -16,9 +18,12 @@ export type PageMeta = {
   next_offset: number | null
 }
 
-type CapResult<T> = { shown: T[]; meta: PageMeta }
+type CapResult = { shown: unknown[]; meta: PageMeta }
 
-function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapResult<T> {
+// Deliberately monomorphic over `unknown`: a generic instantiated at `any`
+// pushes its whole body into scriptc's dynamic boundary, and the values here
+// are only ever counted and sliced.
+function cap(items: unknown[], opts: EmitOpts, sizeOf: (item: unknown) => number): CapResult {
   const total = items.length
   const offset = opts.offset && opts.offset > 0 ? opts.offset : 0
   if (offset >= total && offset > 0) {
@@ -97,20 +102,18 @@ export function sanitizeLine(s: string): { text: string; removed: number } {
   return { text, removed: s.length - text.length }
 }
 
-// process.exit() discards stdout data still sitting in the write queue —
-// when stdout is a pipe, anything past the 64KB kernel buffer is silently
-// dropped. Every stdout write followed by an explicit exit must be awaited
-// through this, so `ax … --body | jq` gets the whole body. (Parse mode
-// exits naturally, so its writes drain on their own.)
+// Every stdout write followed by an explicit exit goes through this, so
+// `ax … --body | jq` gets the whole body. (Parse mode exits naturally, so its
+// writes drain on their own.) See platform.ts for what "flushed" means per host.
 export function writeStdoutFlushed(data: string | Uint8Array): Promise<void> {
-  return new Promise((resolve) => process.stdout.write(data, () => resolve()))
+  return writeStdout(data)
 }
 
 export function emitLines(items: string[], opts: EmitOpts = {}) {
-  const r = cap(items, opts, (s) => s.length + 1)
+  const r = cap(items, opts, (s) => (s as string).length + 1)
   let stripped = 0
   const safe = r.shown.map((line) => {
-    const { text, removed } = sanitizeLine(line)
+    const { text, removed } = sanitizeLine(line as string)
     stripped += removed
     return text
   })
@@ -123,7 +126,7 @@ export function emitLines(items: string[], opts: EmitOpts = {}) {
 
 export function emitJson(value: unknown, opts: EmitOpts = {}) {
   if (Array.isArray(value)) {
-    const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
+    const r = cap(value as unknown[], opts, (v) => JSON.stringify(v).length + 4)
     process.stdout.write(JSON.stringify(r.shown, null, 2) + '\n')
     note(r.meta)
   } else {

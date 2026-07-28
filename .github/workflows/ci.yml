@@ -2,11 +2,15 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
 
 permissions:
   contents: read
+
+# A push to a branch with an open PR would otherwise run this twice.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -19,7 +23,78 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: nix/bun.nix must be in sync with bun.lock
         run: git diff --exit-code nix/bun.nix
+      - name: src/agent-context.gen.ts must be in sync with agent-context.txt
+        run: bun run gen && git diff --exit-code src/agent-context.gen.ts
       - run: bunx tsc --noEmit
       - run: bunx oxfmt --check .
       - run: bun test
-      - run: bun build src/index.ts --compile --outfile ax && ./ax --version
+
+  # A job per OS: a scriptc --dynamic binary is host-native (the embedded engine
+  # archive is built per target, and cross-compiling one is not supported), so
+  # each platform needs its own runner. The first build on a runner compiles
+  # that engine from source, which takes minutes and needs a C toolchain the
+  # `test` job has no other use for.
+  build:
+    name: compile (${{ matrix.target }}, ${{ matrix.builder }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: linux-x64, builder: scriptc }
+          - { os: ubuntu-24.04-arm, target: linux-arm64, builder: scriptc }
+          - { os: macos-latest, target: darwin-arm64, builder: scriptc }
+          - { os: macos-15-intel, target: darwin-x64, builder: scriptc }
+          # Windows builds with bun instead: scriptc has not ported the socket
+          # stack (net/http/https/tls), which is where ax's fetch lives. The
+          # sources are the same, and the bun path keeps the full-fidelity
+          # lib/platform.ts (TextDecoder labels, the stdout drain) that the
+          # compiled builds trade away.
+          - { os: windows-latest, target: windows-x64, builder: bun, ext: .exe }
+    defaults:
+      run:
+        # One script for every OS; Windows runners ship Git Bash.
+        shell: bash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      # scriptc's compiler runs on Node, not Bun: typescript@7's synchronous RPC
+      # channel reads `stdout._handle.fd` off a spawned child.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: matrix.builder == 'scriptc'
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+
+      - name: Install the C toolchain scriptc drives (Linux)
+        if: matrix.builder == 'scriptc' && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake
+
+      - name: Install the C toolchain scriptc drives (macOS)
+        if: matrix.builder == 'scriptc' && runner.os == 'macOS'
+        run: brew install cmake
+
+      - name: Compile (scriptc)
+        if: matrix.builder == 'scriptc'
+        run: bun run build ax${{ matrix.ext }}
+
+      - name: Compile (bun)
+        if: matrix.builder == 'bun'
+        run: bun build src/index.ts --compile --outfile ax${{ matrix.ext }}
+
+      - name: Smoke test — output must match the bun entry point
+        env:
+          AX: ./ax${{ matrix.ext }}
+        run: bash .github/scripts/smoke.sh
+
+      - name: Report binary size
+        run: ls -l ax${{ matrix.ext }} | awk '{print $5, $9}'
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ax-${{ matrix.target }}
+          path: ax${{ matrix.ext }}
+          if-no-files-found: error
