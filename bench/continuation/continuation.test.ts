@@ -340,7 +340,9 @@ describe('instrumented ax', () => {
     expect(pages).toBe(5)
     expect(await readAxTelemetry(provisioned.telemetryPath)).toHaveLength(5)
     expect(await readdir(agentDir)).toEqual(['continuation.html'])
-  })
+    // Spawns bun+ax six times; on a loaded machine that can exceed the
+    // default 5s test timeout (seen in CI-adjacent runs), so give it room.
+  }, 30_000)
 })
 
 describe('continuation grading', () => {
@@ -1081,5 +1083,6 @@ describe('continuation runner', () => {
     const serialized = JSON.stringify(shapes)
     expect(serialized).not.toContain('private-model-route')
     expect(serialized).not.toContain('another-private-route')
-  })
+    // Spawns the fake-claude runner end to end — same headroom as above.
+  }, 30_000)
 })
