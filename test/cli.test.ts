@@ -306,6 +306,122 @@ test('extract: --count and --attr', () => {
   ])
 })
 
+test('extract: --attr keeps 1 line per element, missing attribute becomes an empty line', () => {
+  writeFileSync(
+    join(dir, 'attr-missing.html'),
+    '<ul><li class="m" data-x="a"></li><li class="m"></li><li class="m" data-x="c"></li></ul>'
+  )
+  const r = ax(['attr-missing.html', '.m', '--attr', 'data-x'])
+  expect(r.out.split('\n')).toEqual(['a', '', 'c'])
+  expect(r.err).toContain('1 of 3 matched element(s) have no data-x attribute')
+  expect(ax(['attr-missing.html', '.m', '--count']).out).toBe('3')
+})
+
+test('extract: --attr folds a raw newline in an attribute value onto one line', () => {
+  writeFileSync(
+    join(dir, 'attr-newline.html'),
+    '<ul><li class="n" data-x="line1\nline2"></li><li class="n" data-x="ok"></li></ul>'
+  )
+  const r = ax(['attr-newline.html', '.n', '--attr', 'data-x'])
+  expect(r.out.split('\n')).toEqual(['line1 line2', 'ok'])
+  expect(r.err).toContain('folded newlines in 1 of 2 matched value(s)')
+})
+
+test('extract: --html folds innerHTML newlines onto one line per element', () => {
+  writeFileSync(
+    join(dir, 'html-newline.html'),
+    '<ul><li class="h">one\n<b>two</b></li><li class="h">three</li></ul>'
+  )
+  const r = ax(['html-newline.html', '.h', '--html'])
+  expect(r.out.split('\n')).toEqual(['one <b>two</b>', 'three'])
+  expect(r.err).toContain('folded newlines in 1 of 2 matched value(s)')
+})
+
+// A CRLF, a blank line and U+2028 are each ONE break, so each folds to ONE
+// space — dropping the `+` from LINE_BREAK_RUN doubles them, and every other
+// test here uses a lone \n, which folds identically either way. This is the
+// only guard against that. The missing third element also pins the folded
+// note's denominator, which counts values (2), not matched elements (3).
+test('extract: --attr folds each run of line breaks to a single space', () => {
+  writeFileSync(
+    join(dir, 'attr-runs.html'),
+    '<ul><li class="r" data-x="a\r\nb"></li><li class="r" data-x="c\u2028d"></li><li class="r"></li></ul>'
+  )
+  const r = ax(['attr-runs.html', '.r', '--attr', 'data-x'])
+  expect(r.out.split('\n')).toEqual(['a b', 'c d'])
+  expect(r.err).toContain('folded newlines in 2 of 2 matched value(s)')
+  expect(r.err).toContain('1 of 3 matched element(s) have no data-x attribute')
+})
+
+test('extract: --html folds a blank line between elements to a single space', () => {
+  writeFileSync(
+    join(dir, 'html-runs.html'),
+    '<ul><li class="hr"><b>a</b>\n\n<i>b</i></li><li class="hr">c</li></ul>'
+  )
+  const r = ax(['html-runs.html', '.hr', '--html'])
+  expect(r.out.split('\n')).toEqual(['<b>a</b> <i>b</i>', 'c'])
+})
+
+test('extract: --attr emits no note when every value is already clean (regression guard)', () => {
+  writeFileSync(
+    join(dir, 'attr-clean.html'),
+    '<ul><li class="c" data-x="a"></li><li class="c" data-x="b"></li></ul>'
+  )
+  const r = ax(['attr-clean.html', '.c', '--attr', 'data-x'])
+  expect(r.out.split('\n')).toEqual(['a', 'b'])
+  expect(r.err).toBe('')
+})
+
+test('extract: --attr preserves a whitespace-only value instead of an empty line', () => {
+  writeFileSync(
+    join(dir, 'attr-ws.html'),
+    '<ul><li class="ws" data-x="a"></li><li class="ws" data-x="   "></li><li class="ws" data-x="c"></li></ul>'
+  )
+  const r = ax(['attr-ws.html', '.ws', '--attr', 'data-x'])
+  // ax() trims stdout as a whole string, so the whitespace-only value is
+  // placed in the MIDDLE of the output, where trimming can't reach it.
+  expect(r.out.split('\n')).toEqual(['a', '   ', 'c'])
+  expect(r.err).not.toContain('have no')
+})
+
+test('extract: --attr preserves interior whitespace in an attribute value', () => {
+  writeFileSync(
+    join(dir, 'attr-interior.html'),
+    `<ul><li class="cfg" data-cfg='{"msg": "a  b"}'></li></ul>`
+  )
+  const r = ax(['attr-interior.html', '.cfg', '--attr', 'data-cfg'])
+  expect(r.out).toBe('{"msg": "a  b"}')
+  expect(r.err).toBe('')
+})
+
+test('extract: --html preserves tabs inside <pre>, folding only the newline', () => {
+  writeFileSync(join(dir, 'html-pre-tab.html'), '<div class="p"><pre>\tif (x) {\n\t}</pre></div>')
+  const r = ax(['html-pre-tab.html', '.p', '--html'])
+  expect(r.out).toBe('<pre>\tif (x) { \t}</pre>')
+  expect(r.out).toContain('\t')
+  expect(r.err).toContain('folded newlines in 1 of 1 matched value(s)')
+})
+
+test('extract: empty-string attribute is not counted as missing', () => {
+  writeFileSync(
+    join(dir, 'attr-empty.html'),
+    '<ul><li class="e" data-x="a"></li><li class="e" data-x=""></li><li class="e" data-x="b"></li></ul>'
+  )
+  const r = ax(['attr-empty.html', '.e', '--attr', 'data-x'])
+  expect(r.out.split('\n')).toEqual(['a', '', 'b'])
+  expect(r.err).not.toContain('have no')
+})
+
+test('extract: --html keeps 1 output line per element (line/element parity)', () => {
+  writeFileSync(
+    join(dir, 'html-parity.html'),
+    '<ul><li class="hp">a\nb</li><li class="hp">c</li><li class="hp">d\ne\nf</li></ul>'
+  )
+  const r = ax(['html-parity.html', '.hp', '--html'])
+  const count = ax(['html-parity.html', '.hp', '--count']).out
+  expect(r.out.split('\n')).toHaveLength(Number(count))
+})
+
 test('errors: missing selector hint, exit 1 on no match', () => {
   const r = ax(['page.html', '.nope'])
   expect(r.code).toBe(1)

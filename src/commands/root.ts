@@ -110,6 +110,23 @@ const KEEP_HEADERS = new Set([
 
 const collapse = (s: string) => s.trim().replace(/\s+/g, ' ')
 
+// Line-breaking characters per the 1 element = 1 line contract: CR/LF (what
+// wc -l counts) plus U+2028/U+2029, which non-POSIX consumers (e.g. Python's
+// str.splitlines()) also treat as line breaks. Tabs are left out — they
+// don't split a line and sanitizeLine() in emit.ts deliberately preserves
+// them — so this never corrupts tab-indented <pre> content. LINE_BREAK_RUN is
+// the same class matched in runs, so a CRLF or a blank line folds to a single
+// space instead of one per character; deriving it from LINE_BREAK's source
+// keeps the detector and the transform from drifting apart.
+const LINE_BREAK = /[\r\n\u2028\u2029]/
+const LINE_BREAK_RUN = new RegExp(`${LINE_BREAK.source}+`, 'g')
+
+// Markup must stay markup, so --html cannot use collapse() — folding runs of
+// whitespace would rewrite <pre> content. --attr uses this too, so an
+// attribute value comes back byte-for-byte except for the characters that
+// actually break a line.
+const oneLine = (s: string) => s.replace(LINE_BREAK_RUN, ' ')
+
 function requestHeaders(flags: Record<string, unknown>): Record<string, string> {
   const headers: Record<string, string> = {}
   for (const h of (flags.header ?? []) as string[]) {
@@ -1083,21 +1100,54 @@ export async function root(argv: string[]) {
   }
 
   if (typeof flags.attr === 'string') {
-    const vals = els
-      .map((el) => el.getAttribute(flags.attr as string))
-      .filter((v): v is string => v !== null)
+    const name = flags.attr
+    let missing = 0
+    let folded = 0
+    const vals = els.map((el) => {
+      const raw = el.getAttribute(name)
+      if (raw === null) {
+        missing++
+        return ''
+      }
+      if (LINE_BREAK.test(raw)) folded++
+      return oneLine(raw)
+    })
+    lineStats(els.length, missing, folded, `${name} attribute`)
     return emitLines(vals, opts)
   }
 
   if (flags.html) {
-    return emitLines(
-      els.map((el) => el.innerHTML),
-      opts
-    )
+    let folded = 0
+    const vals = els.map((el) => {
+      const raw = el.innerHTML
+      if (LINE_BREAK.test(raw)) folded++
+      return oneLine(raw)
+    })
+    lineStats(els.length, 0, folded, 'innerHTML')
+    return emitLines(vals, opts)
   }
 
   const texts = els.map((el) => collapse(el.textContent ?? ''))
   return emitLines(texts, opts)
+}
+
+// Completeness + folding report for --attr/--html: neither path may drop or
+// rewrite a row silently, so any missing attribute or line-break fold gets
+// surfaced here instead of only being inferable from a shorter/longer file.
+// total/missing/folded count matched elements, not the (possibly smaller)
+// number of lines emitLines actually prints under --limit/--offset/--budget.
+function lineStats(total: number, missing: number, folded: number, what: string): void {
+  const values = total - missing
+  if (missing > 0) {
+    process.stderr.write(
+      `ax: note: ${missing} of ${total} matched element(s) have no ${what} — kept as empty lines, not dropped\n`
+    )
+  }
+  if (folded > 0) {
+    process.stderr.write(
+      `ax: note: folded newlines in ${folded} of ${values} matched value(s) to keep 1 line per element\n`
+    )
+  }
 }
 
 // Completeness report for extractions: row count + per-field null counts on
