@@ -1,0 +1,19 @@
+bench/continuation/continuation.test.ts
+  s_7f408dd36510ee::t_6e2ac2e6bb93ff 343-345,1086-1087
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "953a24a455d3367918c261872fa0ef1b9490c8b5",
+  "prompts": {},
+  "sessions": {
+    "s_7f408dd36510ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7ad7774f-8d6b-49fd-b473-ae41ef27b013",
+        "model": "unknown"
+      },
+      "human_author": "Yusuke Wada <yusuke@kamawada.com>"
+    }
+  }
+}
