@@ -8,15 +8,22 @@ import { fail } from './io'
 //
 // Grammar (precedence low→high): ||  &&  !  (== != ~ !~ > >= < <=)  primary
 // Primary: number, 'string', "string", /regex/flags, true/false/null,
-//          dot path (name, item.price, tags.length), `column with spaces`,
+//          dot path (name, item.price, tags.length), `literal column name`,
 //          parenthesised expr.
+//
+// Bare column references must be ASCII identifiers; a dot in a bare
+// reference prefers a column literally named that (e.g. a header "foo.bar")
+// and falls back to path traversal, so tags.length still works. Backtick
+// any other literal name — spaces, punctuation, leading digits, non-ASCII,
+// or names that collide with true/false/null (backticked names are never
+// read as keywords).
 
 type Tok =
   | { t: 'op'; v: string }
   | { t: 'num'; v: number }
   | { t: 'str'; v: string }
   | { t: 're'; v: RegExp }
-  | { t: 'path'; v: string[] }
+  | { t: 'path'; v: string[]; quoted?: true }
   | { t: 'lp' }
   | { t: 'rp' }
 
@@ -66,10 +73,12 @@ function lex(src: string): Tok[] {
       i = end + 1
       continue
     }
-    if (c === '`' /* quoted column name — for headers with spaces */) {
+    if (c === '`' /* literal column name — anything a bare identifier can't say */) {
       const end = src.indexOf('`', i + 1)
       if (end === -1) fail(`unterminated \`column name\` in expression: ${src.slice(i)}`)
-      toks.push({ t: 'path', v: [src.slice(i + 1, end)] })
+      // quoted marks this as a verbatim name: never split on dots, never
+      // converted to the true/false/null literals.
+      toks.push({ t: 'path', v: [src.slice(i + 1, end)], quoted: true })
       i = end + 1
       continue
     }
@@ -94,7 +103,7 @@ function lex(src: string): Tok[] {
 type Node =
   | { k: 'lit'; v: unknown }
   | { k: 're'; v: RegExp }
-  | { k: 'path'; v: string[] }
+  | { k: 'path'; v: string[]; raw?: string }
   | { k: 'not'; e: Node }
   | { k: 'bin'; op: string; l: Node; r: Node }
 
@@ -118,10 +127,19 @@ function parse(toks: Tok[]): Node {
     if (t.t === 're') return { k: 're', v: t.v }
     if (t.t === 'path') {
       const [head] = t.v
-      if (t.v.length === 1 && (head === 'true' || head === 'false' || head === 'null')) {
+      // Keywords only apply to bare names — `true` in backticks is a column.
+      if (
+        !t.quoted &&
+        t.v.length === 1 &&
+        (head === 'true' || head === 'false' || head === 'null')
+      ) {
         return { k: 'lit', v: head === 'true' ? true : head === 'false' ? false : null }
       }
-      return { k: 'path', v: t.v }
+      // A bare dotted name might be a column literally named "foo.bar" —
+      // remember the raw spelling so resolution can try that reading first.
+      return t.quoted || t.v.length === 1
+        ? { k: 'path', v: t.v }
+        : { k: 'path', v: t.v, raw: t.v.join('.') }
     }
     return fail(`unexpected token in expression`)
   }
@@ -187,6 +205,13 @@ function evalNode(n: Node, ctx: unknown): unknown {
     case 're':
       return n.v
     case 'path':
+      // Literal column first: a header named "foo.bar" beats path traversal
+      // into row.foo.bar (which would silently resolve to null on flat rows).
+      // Rows without such a key fall through to normal path resolution, so
+      // nested access and .length are unaffected.
+      if (n.raw !== undefined && ctx !== null && typeof ctx === 'object' && n.raw in ctx) {
+        return (ctx as Record<string, unknown>)[n.raw] ?? null
+      }
       return resolve(n.v, ctx)
     case 'not':
       return !evalNode(n.e, ctx)

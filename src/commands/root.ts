@@ -53,7 +53,9 @@ extract (selector — CSS, structured):
   --md               readable page content as markdown (for reading docs;
                      capped at ~2000 tokens unless --all or --budget T)
   --where <expr>     filter rows: price > 100 && name ~ /^foo/i  (no eval;
-                     \`col name\` for headers with spaces)
+                     bare names are ASCII identifiers, a dot prefers a column
+                     literally so named then falls back to path traversal;
+                     backtick anything else: \`col name\`, \`名称\`, \`true\`)
 
 output shape (token-cheap by design):
   rows default to TSV (header once, ≈40% of JSON tokens); --json for JSON rows

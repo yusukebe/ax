@@ -40,7 +40,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
     ax URL '.item a' --attr href | --text | --html
     ax URL --md                            readable page as markdown (docs!)
     --where 'price > 100 && name ~ /^foo/i'    filter rows (safe expr, no eval;
-      backtick column names with spaces: `Country or territory` ~ /Japan/)
+      backtick any column name a bare ASCII identifier can't say — spaces,
+      punctuation, non-ASCII, or true/false/null: `Country or territory`)
 
 ## Output rules
 
