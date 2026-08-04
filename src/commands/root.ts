@@ -647,29 +647,78 @@ export async function root(argv: string[]) {
     budget: num(flags.budget, 0, { flag: '--budget', kind: 'positive integer', fail }),
     offset: num(flags.offset, 0, { flag: '--offset', kind: 'non-negative integer', fail }),
   }
-  const envelopeModifiers = [
-    ['--attr', flags.attr],
-    ['--row', flags.row],
-    ['--locate', flags.locate],
-    ['--where', flags.where],
-  ] as const
-  const jsonEnvelope = flags['json-envelope'] === true
   const optionsEnd = argv.indexOf('--')
-  const missingEnvelopeValue =
-    (jsonEnvelope ? envelopeModifiers.find(([, value]) => value === true)?.[0] : undefined) ??
-    envelopeModifiers.find(([flag]) =>
-      argv.some(
-        (arg, index) =>
-          (optionsEnd === -1 || index < optionsEnd) &&
-          arg === '--json-envelope' &&
-          argv[index - 1] === flag
-      )
-    )?.[0]
-  if (missingEnvelopeValue) {
-    fail(
-      `${missingEnvelopeValue} requires a value`,
-      'pass the modifier value before --json-envelope'
+  const optionArgs = argv.slice(0, optionsEnd === -1 ? argv.length : optionsEnd)
+  const outputValueFlags = [
+    ['--attr', ['--attr']],
+    ['--row', ['--row']],
+    ['--locate', ['--locate']],
+    ['--where', ['--where']],
+    ['--output', ['--output', '-o']],
+  ] as const
+  const outputFlagTokens = new Set<string>([
+    ...outputValueFlags.flatMap(([, spellings]) => spellings),
+    '--md',
+    '--outline',
+    '--table',
+    '--count',
+    '--text',
+    '--html',
+    '--body',
+    '--tsv',
+    '--json',
+    '--json-envelope',
+  ])
+  const isOutputFlagToken = (arg: string) =>
+    outputFlagTokens.has(arg) ||
+    [...outputFlagTokens].some((flag) =>
+      flag.startsWith('--')
+        ? arg.startsWith(`${flag}=`)
+        : arg.startsWith(flag) && arg.length > flag.length
     )
+  const missingOutputValue = outputValueFlags.find(([, spellings]) =>
+    optionArgs.some(
+      (arg, index) =>
+        spellings.some((spelling) => spelling === arg) &&
+        (optionArgs[index + 1] === undefined || isOutputFlagToken(optionArgs[index + 1]!))
+    )
+  )?.[0]
+  if (missingOutputValue) fail(`${missingOutputValue} requires a value`)
+
+  const outputModes = [
+    ['--md', flags.md === true],
+    ['--outline', flags.outline === true],
+    ['--locate', typeof flags.locate === 'string'],
+    ['--table', flags.table === true],
+    ['--count', flags.count === true],
+    ['--row', typeof flags.row === 'string'],
+    ['--text', flags.text === true],
+    ['--attr', typeof flags.attr === 'string'],
+    ['--html', flags.html === true],
+    ['--output', typeof flags.output === 'string'],
+    ['--body', flags.body === true],
+    ['--tsv', flags.tsv === true],
+    ['--json', flags.json === true],
+  ] as const
+  const activeOutputModes = outputModes.filter(([, active]) => active).map(([flag]) => flag)
+  const formatModifierOnly =
+    activeOutputModes.length === 2 &&
+    ((activeOutputModes.includes('--json') &&
+      activeOutputModes.some((flag) => ['--locate', '--table', '--row'].includes(flag))) ||
+      (activeOutputModes.includes('--tsv') &&
+        activeOutputModes.some((flag) => ['--table', '--row'].includes(flag))))
+  if (activeOutputModes.length > 1 && !formatModifierOnly) {
+    fail(
+      `conflicting output modes: ${activeOutputModes.join(', ')}`,
+      'choose one output mode; --json may modify --row, --table, or --locate'
+    )
+  }
+  const jsonEnvelope = flags['json-envelope'] === true
+  if (flags.json === true && jsonEnvelope) {
+    fail('conflicting output modes: --json, --json-envelope', 'choose one JSON output format')
+  }
+  if (typeof flags.where === 'string' && typeof flags.row !== 'string' && flags.table !== true) {
+    fail('--where requires --row or --table')
   }
   const emitStructured = (value: unknown[]) =>
     jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
@@ -687,9 +736,13 @@ export async function root(argv: string[]) {
               ? '--html'
               : typeof flags.attr === 'string'
                 ? '--attr'
-                : flags.body === true
-                  ? '--body'
-                  : null
+                : typeof flags.output === 'string'
+                  ? '--output'
+                  : flags.body === true
+                    ? '--body'
+                    : flags.tsv === true
+                      ? '--tsv'
+                      : null
   if (jsonEnvelope && envelopeConflict) {
     const hint =
       envelopeConflict === '--md'

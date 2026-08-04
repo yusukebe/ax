@@ -48,6 +48,7 @@ test('extract: --row defaults to TSV, --json for JSON rows', () => {
   const tsv = ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv']).out
   expect(tsv.split('\n')[0]).toBe('title\thref\tlv')
   expect(tsv.split('\n')[1]).toBe('One bold\t/1.htm\tA1')
+  expect(ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv', '--tsv']).out).toBe(tsv)
   const rows = JSON.parse(
     ax(['page.html', '.card', '--row', 'title=a, href=a@href, lv=.lv', '--json']).out
   )
@@ -538,6 +539,57 @@ test('numeric output flags preserve valid boundary values', () => {
   expect(budget.out).toBe('One boldA1')
 })
 
+test('conflicting output modes fail before source I/O', () => {
+  const cases = [
+    ['--md', '--outline'],
+    ['--row', 'title=a', '--table'],
+    ['--count', '--html'],
+    ['--attr', 'href', '--json'],
+    ['--json', '--json-envelope'],
+    ['-o', 'out.bin', '--body'],
+    ['--row', 'title=a', '--json', '--tsv'],
+  ]
+
+  for (const flags of cases) {
+    const r = ax(['missing.html', '.x', ...flags])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain('ax: error: conflicting output modes:')
+    expect(r.err).not.toContain('ENOENT')
+  }
+})
+
+test('output string flags do not swallow a conflicting flag as their value', () => {
+  const cases: [string[], string][] = [
+    [['--attr', '--html'], '--attr'],
+    [['--row', '--table'], '--row'],
+    [['--locate', '--count'], '--locate'],
+    [['-o', '--body'], '--output'],
+    [['--row', '--json'], '--row'],
+    [['--attr', '--row=title=a'], '--attr'],
+    [['--row', '--attr=href'], '--row'],
+    [['--output', '--row=title=a'], '--output'],
+    [['--row', '-oout.bin'], '--row'],
+    [['--row', '-o=out.bin'], '--row'],
+  ]
+
+  for (const [flags, missing] of cases) {
+    const r = ax(['missing.html', '.x', ...flags])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain(`ax: error: ${missing} requires a value`)
+    expect(r.err).not.toContain('ENOENT')
+  }
+})
+
+test('--where fails outside --row or --table before source I/O', () => {
+  const r = ax(['missing.html', '.x', '--where', 'name == "x"'])
+  expect(r.code).toBe(1)
+  expect(r.out).toBe('')
+  expect(r.err).toContain('ax: error: --where requires --row or --table')
+  expect(r.err).not.toContain('ENOENT')
+})
+
 test('cap: default limit with stderr note', () => {
   const r = ax(['many.html', '.x'])
   expect(r.out.split('\n')).toHaveLength(50)
@@ -703,7 +755,9 @@ test('json envelope: unsupported modes fail before reading the source', () => {
     ['missing.html', '.x', '--text', '--json-envelope'],
     ['missing.html', '.x', '--html', '--json-envelope'],
     ['missing.html', '.x', '--attr', 'href', '--json-envelope'],
+    ['missing.html', '.x', '--output', 'out.bin', '--json-envelope'],
     ['missing.html', '.x', '--body', '--json-envelope'],
+    ['missing.html', '.x', '--row', 'title=a', '--tsv', '--json-envelope'],
   ]
 
   for (const args of cases) {
