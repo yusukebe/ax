@@ -60,7 +60,9 @@ output shape (token-cheap by design):
   --json-envelope    {data, meta}; continue only while state=more → --offset next_offset
                      stop on complete or past_end; do not restart or increase budget
   --limit <n> (default 50)   --all
-  --budget <t>       cap output at ~t tokens; truncation is never silent
+  --budget <t>       ~t-token output target; cuts at item boundaries and
+                     always emits at least one item, so a single oversized
+                     item can exceed t (announced); truncation is never silent
   --offset <n>       skip the first n results — truncation notes name the
                      exact --offset to continue from, and the URL cache makes
                      the follow-up free (no refetch, no re-read overlap)

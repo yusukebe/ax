@@ -50,6 +50,8 @@ Skill: npx skills add yusukebe/ax   Source: https://github.com/yusukebe/ax
   always announced on stderr, never silent. The note names the exact --offset
   to continue from — rerun with that --offset instead of refetching with a
   bigger budget (the cache makes the follow-up free, and nothing is re-read).
+  --budget cuts at item boundaries and always emits at least one item, so a
+  single oversized item can exceed the budget (announced when it does).
 - Rows (--row/--table) default to header-once TSV — 1/3 the tokens of JSON.
   Add --json when you need JSON rows (piping, nested handling).
 - For automated continuation, use `--json-envelope`. Read `data`; when

@@ -765,6 +765,29 @@ test('cap: --md alone stays capped by the default token budget', () => {
   expect(r.out.length).toBeLessThan(2000 * 4 + 500)
 })
 
+test('cap: an item larger than --budget is emitted and announced, never silent', () => {
+  writeFileSync(
+    join(dir, 'oversized.html'),
+    `<ul><li class="x">tiny</li><li class="x">${'long text '.repeat(120)}</li></ul>`
+  )
+  // Previously the one silent overflow: with --offset nothing remains after
+  // the emitted item, so no hidden-results note fired either.
+  const r = ax(['oversized.html', '.x', '--offset', '1', '--budget', '1'])
+  expect(r.code).toBe(0)
+  expect(r.out.length).toBeGreaterThan(4)
+  expect(r.err).toContain('over --budget')
+  expect(r.err).toContain('never split')
+
+  const fits = ax(['oversized.html', '.x', '--limit', '1', '--budget', '50'])
+  expect(fits.err).not.toContain('over --budget')
+
+  // Envelope mode suppresses continuation notes (meta carries them), but the
+  // over-budget warning still reaches stderr.
+  const env = ax(['oversized.html', '.x', '--offset', '1', '--budget', '1', '--json-envelope'])
+  expect(env.err).toContain('over --budget')
+  expect(JSON.parse(env.out).meta.state).toBe('complete')
+})
+
 test('cap: --offset applies to JSON rows too', () => {
   const r = ax(['page.html', '.card', '--row', 'title=a', '--json', '--offset', '1'])
   expect(JSON.parse(r.out)).toEqual([{ title: 'Two' }])

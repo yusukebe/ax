@@ -16,7 +16,11 @@ export type PageMeta = {
   next_offset: number | null
 }
 
-type CapResult<T> = { shown: T[]; meta: PageMeta }
+// overBudgetTokens: set when the single emitted item alone exceeds the
+// requested budget — the one way output can blow past --budget, since cuts
+// land on item boundaries and the first eligible item is always emitted.
+// Kept outside meta: it is a stderr warning, not continuation state.
+type CapResult<T> = { shown: T[]; meta: PageMeta; overBudgetTokens: number | null }
 
 function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapResult<T> {
   const total = items.length
@@ -25,6 +29,7 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
     return {
       shown: [],
       meta: { state: 'past_end', total, offset, returned: 0, next_offset: null },
+      overBudgetTokens: null,
     }
   }
   let shown = offset > 0 ? items.slice(offset) : items
@@ -32,7 +37,10 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
     const limit = opts.limit ?? DEFAULT_LIMIT
     if (shown.length > limit) shown = shown.slice(0, limit)
   }
-  // --budget <tokens>: additionally cut to an estimated token budget.
+  // --budget <tokens>: additionally cut to an estimated token budget. Cuts
+  // land on item boundaries (an item is never split), and the first eligible
+  // item is always emitted so a small budget still makes progress.
+  let overBudgetTokens: number | null = null
   if (opts.budget && opts.budget > 0) {
     const maxChars = opts.budget * CHARS_PER_TOKEN
     let used = 0
@@ -42,6 +50,11 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
       if (used > maxChars && i > 0) break
     }
     shown = shown.slice(0, i)
+    // Only a lone oversized item can exceed the budget: with 2+ items shown,
+    // the loop already guaranteed their sum fits.
+    if (shown.length === 1 && sizeOf(shown[0]!) > maxChars) {
+      overBudgetTokens = Math.ceil(sizeOf(shown[0]!) / CHARS_PER_TOKEN)
+    }
   }
   const returned = shown.length
   const nextOffset = offset + returned < total ? offset + returned : null
@@ -54,6 +67,18 @@ function cap<T>(items: T[], opts: EmitOpts, sizeOf: (item: T) => number): CapRes
       returned,
       next_offset: nextOffset,
     },
+    overBudgetTokens,
+  }
+}
+
+// The always-emit-one rule means --budget is a target, not a hard ceiling —
+// when the emitted item alone exceeds it, never-silent demands we say so
+// (this fires even in envelope mode, where the continuation notes don't).
+function noteOverBudget(r: CapResult<unknown>) {
+  if (r.overBudgetTokens !== null) {
+    process.stderr.write(
+      `ax: note: emitted item is ~${r.overBudgetTokens} tokens — over --budget (items are never split, and at least one is always emitted)\n`
+    )
   }
 }
 
@@ -118,13 +143,19 @@ export function emitLines(items: string[], opts: EmitOpts = {}) {
   if (stripped > 0) {
     process.stderr.write(`ax: note: stripped ${stripped} control character(s) from output\n`)
   }
+  noteOverBudget(r)
   note(r.meta)
 }
 
+// Budget sizing must measure what is actually written — the pretty-printed
+// form — or the estimate systematically undercounts by the indentation.
+const jsonSize = (v: unknown) => JSON.stringify(v, null, 2).length + 4
+
 export function emitJson(value: unknown, opts: EmitOpts = {}) {
   if (Array.isArray(value)) {
-    const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
+    const r = cap(value, opts, jsonSize)
     process.stdout.write(JSON.stringify(r.shown, null, 2) + '\n')
+    noteOverBudget(r)
     note(r.meta)
   } else {
     process.stdout.write(JSON.stringify(value, null, 2) + '\n')
@@ -132,6 +163,9 @@ export function emitJson(value: unknown, opts: EmitOpts = {}) {
 }
 
 export function emitJsonEnvelope(value: unknown[], opts: EmitOpts = {}) {
-  const r = cap(value, opts, (v) => JSON.stringify(v).length + 4)
+  const r = cap(value, opts, jsonSize)
   process.stdout.write(JSON.stringify({ data: r.shown, meta: r.meta }, null, 2) + '\n')
+  // Continuation notes live in meta here, but the over-budget warning is not
+  // continuation state — never-silent applies in envelope mode too.
+  noteOverBudget(r)
 }
