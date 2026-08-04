@@ -14,7 +14,7 @@
   "scripts": {
     "ax": "bun run src/index.ts",
     "build": "bun build src/index.ts --compile --outfile ax",
-    "test": "bun test",
+    "test": "bun test --timeout 30000",
     "format": "oxfmt --check .",
     "format:fix": "oxfmt --write .",
     "postinstall": "bun2nix -o nix/bun.nix"

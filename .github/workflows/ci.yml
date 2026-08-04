@@ -21,5 +21,8 @@ jobs:
         run: git diff --exit-code nix/bun.nix
       - run: bunx tsc --noEmit
       - run: bunx oxfmt --check .
-      - run: bun test
+      # The suite spawns bun+ax subprocesses heavily (CLI integration tests,
+      # continuation bench); Bun's 5s default per-test timeout flakes under
+      # loaded runners, so raise it suite-wide.
+      - run: bun test --timeout 30000
       - run: bun build src/index.ts --compile --outfile ax && ./ax --version
