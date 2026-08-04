@@ -1,0 +1,19 @@
+test/cli.test.ts
+  s_72457a300b8932::t_ee1efd5880b67d 597-599,677-678
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "ee15cf9038b5dacf21871d7b89fcbb3ed112ffe2",
+  "prompts": {},
+  "sessions": {
+    "s_72457a300b8932": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "244aa215-d570-4ebb-adb5-7ddea49222ce",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Yusuke Wada <yusuke@kamawada.com>"
+    }
+  }
+}
