@@ -1,0 +1,21 @@
+.github/workflows/ci.yml
+  s_7f408dd36510ee::t_a7f0f4cf89a086 24-27
+package.json
+  s_7f408dd36510ee::t_300262b7695fec 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "d59a3d3269cd0e569f864b5da45a8598524e5b2b",
+  "prompts": {},
+  "sessions": {
+    "s_7f408dd36510ee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7ad7774f-8d6b-49fd-b473-ae41ef27b013",
+        "model": "unknown"
+      },
+      "human_author": "Yusuke Wada <yusuke@kamawada.com>"
+    }
+  }
+}
