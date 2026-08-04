@@ -594,7 +594,9 @@ test('json envelope: next_offset resumes without overlap or gaps', () => {
   }
 
   expect(actual).toEqual(expected)
-})
+  // ~10 ax spawns in one test — on a loaded machine that exceeds Bun's
+  // default 5s test timeout (same class as the bench fix in #58).
+}, 30_000)
 
 test('json envelope: row, table, and locate use the same contract', () => {
   const row = JSON.parse(
@@ -672,7 +674,8 @@ test('json envelope: budget continuation reconstructs the full result', () => {
   }
 
   expect(actual).toEqual(expected)
-})
+  // Same spawn-loop shape as above — give it the same headroom.
+}, 30_000)
 
 test('json envelope: existing --json remains a top-level array', () => {
   const out = JSON.parse(ax(['page.html', '.card', '--json']).out)
