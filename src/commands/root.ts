@@ -1058,10 +1058,17 @@ export async function root(argv: string[]) {
       return { headers, rows }
     }
     const parsed = targets.map(parse)
-    const beforeWhere = parsed.length === 1 ? parsed[0]!.rows.length : 0
+    const beforeWhere = parsed.reduce((n, p) => n + p.rows.length, 0)
     if (wherePred) for (const p of parsed) p.rows = p.rows.filter(wherePred)
     const tableResult = parsed.length === 1 ? parsed[0]!.rows : parsed
-    if (parsed.length === 1) rowStats(parsed[0]!.rows, wherePred ? beforeWhere : undefined)
+    // The completeness note is a documented guarantee ("--row/--table always
+    // report N rows extracted") that agents rely on instead of verifying —
+    // it must survive the multi-table shape too, aggregated across tables.
+    rowStats(
+      parsed.flatMap((p) => p.rows),
+      wherePred ? beforeWhere : undefined,
+      parsed.length
+    )
     if (jsonEnvelope || flags.json || parsed.length > 1) return emitStructured(tableResult)
     return emitLines(toTsv(tableResult), opts)
   }
@@ -1152,7 +1159,8 @@ function lineStats(total: number, missing: number, folded: number, what: string)
 
 // Completeness report for extractions: row count + per-field null counts on
 // stderr, so the agent never needs a separate verification probe.
-function rowStats(rows: Record<string, string | null>[], beforeWhere?: number) {
+function rowStats(rows: Record<string, string | null>[], beforeWhere?: number, tables?: number) {
+  const scope = tables !== undefined && tables > 1 ? `${tables} tables, ` : ''
   if (rows.length === 0) {
     process.stderr.write(
       beforeWhere !== undefined
@@ -1161,12 +1169,16 @@ function rowStats(rows: Record<string, string | null>[], beforeWhere?: number) {
     )
     return
   }
+  // Key union across all rows — tables can have different headers, and a row
+  // is only "empty" for a field its own table actually has.
+  const keys = new Set<string>()
+  for (const r of rows) for (const key of Object.keys(r)) keys.add(key)
   const nulls: string[] = []
-  for (const key of Object.keys(rows[0]!)) {
-    const n = rows.filter((r) => r[key] === null || r[key] === '').length
+  for (const key of keys) {
+    const n = rows.filter((r) => key in r && (r[key] === null || r[key] === '')).length
     if (n > 0) nulls.push(`${key}: ${n} empty`)
   }
   process.stderr.write(
-    `ax: note: ${rows.length} rows extracted${nulls.length ? ` — check: ${nulls.join(', ')}` : ', no empty fields'}\n`
+    `ax: note: ${scope}${rows.length} rows extracted${nulls.length ? ` — check: ${nulls.join(', ')}` : ', no empty fields'}\n`
   )
 }

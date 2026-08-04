@@ -92,6 +92,26 @@ test('discover: emitted selectors round-trip CSS-special class and id names', ()
   expect(ax(['special-selectors.html', idHit.selector, '--count']).out).toBe('1')
 })
 
+test('extract: --table reports row stats for multiple tables too', () => {
+  writeFileSync(
+    join(dir, 'tables.html'),
+    `<html><body>
+      <table><tr><th>a</th></tr><tr><td>1</td></tr><tr><td>2</td></tr></table>
+      <table><tr><th>b</th><th>c</th></tr><tr><td>x</td><td></td></tr><tr><td>y</td><td>z</td></tr></table>
+    </body></html>`
+  )
+  const single = ax(['page.html', '--table'])
+  expect(single.err).toContain('1 rows extracted')
+  expect(single.err).not.toContain('tables,')
+
+  const multi = ax(['tables.html', 'table', '--table'])
+  expect(multi.err).toContain('2 tables, 4 rows extracted')
+  expect(multi.err).toContain('c: 1 empty') // empties counted per-table, not across foreign headers
+
+  const filtered = ax(['tables.html', 'table', '--table', '--where', 'a == 1'])
+  expect(filtered.err).toContain('2 tables, 1 rows extracted')
+})
+
 test('extract: --md produces readable markdown', () => {
   const r = ax(['page.html', '--md'])
   expect(r.out).toContain('# Guide')
