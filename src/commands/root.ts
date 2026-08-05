@@ -641,6 +641,7 @@ export async function root(argv: string[]) {
   if (flags.help || _.length === 0) return console.log(rootHelp)
 
   const [src, selector] = _
+  const isUrl = /^https?:\/\//.test(src!)
   const opts = {
     limit: num(flags.limit, 50, { flag: '--limit', kind: 'positive integer', fail }),
     all: flags.all === true,
@@ -722,7 +723,6 @@ export async function root(argv: string[]) {
   }
   const emitStructured = (value: unknown[]) =>
     jsonEnvelope ? emitJsonEnvelope(value, opts) : emitJson(value, opts)
-  const isUrl = /^https?:\/\//.test(src!)
   const envelopeConflict =
     flags.md === true
       ? '--md'
@@ -756,6 +756,14 @@ export async function root(argv: string[]) {
     fail(
       '--json-envelope requires structured parse output',
       'use it with --row, --table, --locate, or a selector; fetch mode already returns JSON'
+    )
+  }
+  const fetchOnlyOutputMode =
+    typeof flags.output === 'string' ? '--output' : flags.body === true ? '--body' : null
+  if (fetchOnlyOutputMode && (!isUrl || selector !== undefined)) {
+    fail(
+      `${fetchOnlyOutputMode} requires fetch mode without a selector`,
+      'use a URL without a selector, or choose a parse output mode'
     )
   }
   const headers = isUrl ? requestHeaders(flags) : {}

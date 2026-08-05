@@ -590,6 +590,24 @@ test('--where fails outside --row or --table before source I/O', () => {
   expect(r.err).not.toContain('ENOENT')
 })
 
+test('fetch-only output modes fail in parse mode before source I/O', () => {
+  const cases: [string[], string][] = [
+    [['missing.html', '.x', '--body'], '--body'],
+    [['http://127.0.0.1:1', '.x', '--body'], '--body'],
+    [['missing.html', '--body'], '--body'],
+    [['missing.html', '.x', '--output', 'out.bin'], '--output'],
+    [['missing.html', '.x', '-o', 'out.bin'], '--output'],
+  ]
+
+  for (const [args, outputMode] of cases) {
+    const r = ax(args)
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain(`ax: error: ${outputMode} requires fetch mode without a selector`)
+    expect(r.err).not.toContain('ENOENT')
+  }
+})
+
 test('cap: default limit with stderr note', () => {
   const r = ax(['many.html', '.x'])
   expect(r.out.split('\n')).toHaveLength(50)
