@@ -758,6 +758,20 @@ export async function root(argv: string[]) {
       'use it with --row, --table, --locate, or a selector; fetch mode already returns JSON'
     )
   }
+  const countModifiers = [
+    ['--limit', flags.limit !== undefined],
+    ['--offset', flags.offset !== undefined],
+    ['--budget', flags.budget !== undefined],
+    ['--all', flags.all === true],
+  ]
+    .filter(([, active]) => active)
+    .map(([flag]) => flag)
+  if (flags.count === true && countModifiers.length > 0) {
+    fail(
+      `--count cannot be combined with ${countModifiers.join(', ')}`,
+      '--count always reports total matches; remove pagination modifiers or choose a list output mode'
+    )
+  }
   const fetchOnlyOutputMode =
     typeof flags.output === 'string' ? '--output' : flags.body === true ? '--body' : null
   if (fetchOnlyOutputMode && (!isUrl || selector !== undefined)) {
