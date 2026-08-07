@@ -608,6 +608,18 @@ test('fetch-only output modes fail in parse mode before source I/O', () => {
   }
 })
 
+test('--count rejects pagination modifiers before source I/O', () => {
+  const cases = [['--limit', '1'], ['--offset', '1'], ['--budget', '1'], ['--all']]
+
+  for (const modifier of cases) {
+    const r = ax(['missing.html', '.x', '--count', ...modifier])
+    expect(r.code).toBe(1)
+    expect(r.out).toBe('')
+    expect(r.err).toContain(`ax: error: --count cannot be combined with ${modifier[0]}`)
+    expect(r.err).not.toContain('ENOENT')
+  }
+})
+
 test('cap: default limit with stderr note', () => {
   const r = ax(['many.html', '.x'])
   expect(r.out.split('\n')).toHaveLength(50)
