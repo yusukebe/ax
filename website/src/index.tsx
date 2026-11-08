@@ -552,7 +552,7 @@ ax url --md --budget 800   # docs as markdown`}</pre>
             <code>nix run github:yusukebe/ax</code>
           </li>
           <li>
-            <span class='t'>PowerShell(Win)</span>
+            <span class='t'>powershell</span>
             <code>irm https://ax.yusuke.run/install.ps1 | iex</code>
           </li>
           <li>

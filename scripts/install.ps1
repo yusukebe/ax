@@ -3,6 +3,8 @@
 # an existing ax.exe after verification succeeds.
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 is very slow with the progress bar enabled.
+$ProgressPreference = 'SilentlyContinue'
 
 # pwsh can run on Unix, but this installer only supports Windows.
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
