@@ -1,0 +1,21 @@
+scripts/install.ps1
+  s_866c70dca1a0ea::t_572f58654ad060 6-7
+website/src/index.tsx
+  s_866c70dca1a0ea::t_d2829b0e863f24 555
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bd298a2fe63058c96e339a2eb5bc8d3d077c5450",
+  "prompts": {},
+  "sessions": {
+    "s_866c70dca1a0ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7323b754-3908-4aa4-a35f-70b49d9b19ba",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Yusuke Wada <yusuke@kamawada.com>"
+    }
+  }
+}
