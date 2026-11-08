@@ -3,6 +3,7 @@ import {
   duelBefore,
   faviconPngB64,
   installSh,
+  installPs1,
   llmsTxt,
   ogPngB64,
   skillMd,
@@ -47,6 +48,7 @@ app.use('*', async (c, next) => {
 
 const TEXT_CACHE = { 'Cache-Control': 'public, max-age=300' }
 app.get('/install', (c) => c.text(installSh, 200, TEXT_CACHE))
+app.get('/install.ps1', (c) => c.text(installPs1, 200, TEXT_CACHE))
 app.get('/llms.txt', (c) => c.text(llmsTxt, 200, TEXT_CACHE))
 app.get('/skill.md', (c) => c.text(skillMd, 200, TEXT_CACHE))
 const PNG_HEADERS = { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400' }
@@ -548,6 +550,10 @@ ax url --md --budget 800   # docs as markdown`}</pre>
           <li>
             <span class='t'>nix</span>
             <code>nix run github:yusukebe/ax</code>
+          </li>
+          <li>
+            <span class='t'>PowerShell(Win)</span>
+            <code>irm https://ax.yusuke.run/install.ps1 | iex</code>
           </li>
           <li>
             <span class='t'>source</span>
