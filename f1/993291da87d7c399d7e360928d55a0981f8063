@@ -1,0 +1,23 @@
+.github/workflows/ci.yml
+  s_866c70dca1a0ea::t_0dee8fdd66fe6e 18
+.github/workflows/deploy-site.yml
+  s_866c70dca1a0ea::t_c1b6da7d820737 23
+.github/workflows/release.yml
+  s_866c70dca1a0ea::t_95fd3893a99409 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "f1993291da87d7c399d7e360928d55a0981f8063",
+  "prompts": {},
+  "sessions": {
+    "s_866c70dca1a0ea": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7323b754-3908-4aa4-a35f-70b49d9b19ba",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Yusuke Wada <yusuke@kamawada.com>"
+    }
+  }
+}
